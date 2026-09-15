@@ -12,13 +12,17 @@ from fastapi import FastAPI
 from app import __version__
 from app.api import chat as chat_api
 from app.api import health as health_api
+from app.api.errors import install_openai_exception_handlers
+from app.auth import assert_secure_admin_token
 from app.config import Settings, get_settings
-from app.panel import router as panel_router
 from app.db.database import Database, set_db
 from app.db.ledger import UsageLedger
 from app.failover.circuit_breaker import CircuitBreakerRegistry
 from app.failover.orchestrator import FailoverOrchestrator
+from app.metrics.audit import AuditLog
 from app.metrics.prometheus import MetricsRegistry
+from app.metrics.request_id import RequestIdMiddleware
+from app.panel import router as panel_router
 from app.providers.registry import ProviderRegistry, build_default_registry
 from app.ratelimit.token_bucket import TokenBucketLimiter
 from app.routing.key_router import KeyRouter
@@ -46,6 +50,8 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        # Reject insecure admin tokens outside development before serving traffic.
+        assert_secure_admin_token(app.state.settings)
         app.state.started_at = time.time()
         database: Database = app.state.db
         await database.connect()
@@ -55,10 +61,11 @@ def create_app(
         router.bind_db(database)
         linked = await router.hydrate_from_db()
         logger.info(
-            "llm-router %s starting (db=%s, env_keys_linked=%s)",
+            "llm-router %s starting (db=%s, env_keys_linked=%s, env=%s)",
             __version__,
             database.path,
             linked,
+            getattr(app.state.settings, "env", "production"),
         )
         yield
         reg: ProviderRegistry = app.state.registry
@@ -74,6 +81,8 @@ def create_app(
         description="OpenAI-compatible asyncio FastAPI LLM gateway with multi-provider failover",
         lifespan=lifespan,
     )
+    install_openai_exception_handlers(app)
+    app.add_middleware(RequestIdMiddleware)
 
     reg = registry or build_default_registry(settings)
     breakers = CircuitBreakerRegistry(
@@ -95,6 +104,7 @@ def create_app(
         cost_per_req=settings.rate_cost_per_req,
     )
     metrics = MetricsRegistry()
+    audit = AuditLog()
 
     app.state.settings = settings
     app.state.registry = reg
@@ -105,6 +115,7 @@ def create_app(
     app.state.ledger = ledger
     app.state.rate_limiter = rate_limiter
     app.state.metrics = metrics
+    app.state.audit = audit
 
     app.include_router(chat_api.router)
     app.include_router(health_api.router)

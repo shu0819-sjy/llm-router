@@ -130,6 +130,9 @@ def test_settings(monkeypatch: pytest.MonkeyPatch, tmp_path) -> Settings:
     monkeypatch.setenv("LLM_ROUTER_RATE_REFILL_PER_S", "1")
     monkeypatch.setenv("LLM_ROUTER_RATE_COST_PER_REQ", "1")
     monkeypatch.setenv("LLM_ROUTER_ENABLE_PROMETHEUS", "true")
+    # Tests run in development mode so empty/placeholder admin tokens do not hard-fail lifespan.
+    monkeypatch.setenv("LLM_ROUTER_ENV", "development")
+    monkeypatch.setenv("LLM_ROUTER_RATE_LIMIT_SECRET", "test-rate-limit-secret")
     monkeypatch.setenv("OPENAI_API_KEY", "test-openai")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-anthropic")
     monkeypatch.setenv("DEEPSEEK_API_KEY", "test-deepseek")

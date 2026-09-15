@@ -9,9 +9,11 @@ from typing import Any
 
 import aiosqlite
 
+from app.db.cost import PriceQuote
+
 _SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 
-# Seed prices (USD per 1M tokens) — illustrative defaults for v0.1
+# Seed prices (USD per 1M tokens) — illustrative defaults
 _DEFAULT_PRICES: list[tuple[str, float, float]] = [
     ("gpt-4o-mini", 0.15, 0.60),
     ("gpt-4o", 2.50, 10.00),
@@ -33,6 +35,13 @@ def hash_api_key(raw_key: str) -> str:
 
 
 class Database:
+    """
+    SQLite adapter implementing the storage ports used by the app.
+
+    Redis / PostgreSQL are not implemented; swap via app.state injection of
+    objects satisfying ApiKeyStore / PriceStore / UsageStore (see app.db.storage).
+    """
+
     def __init__(self, path: str) -> None:
         self.path = path
         self._conn: aiosqlite.Connection | None = None
@@ -60,17 +69,52 @@ class Database:
         sql = _SCHEMA_PATH.read_text(encoding="utf-8")
         await self._conn.executescript(sql)
         await self._conn.commit()
+        await self._migrate_columns()
         await self.seed_prices()
+
+    async def _table_columns(self, table: str) -> set[str]:
+        assert self._conn is not None
+        cur = await self._conn.execute(f"PRAGMA table_info({table})")
+        rows = await cur.fetchall()
+        return {str(r[1]) for r in rows}
+
+    async def _migrate_columns(self) -> None:
+        """Additive migrations for DBs created under older schemas."""
+        assert self._conn is not None
+        usage_cols = await self._table_columns("usage_events")
+        for col, ddl in (
+            ("accounting_status", "TEXT NOT NULL DEFAULT 'actual'"),
+            ("price_version", "TEXT"),
+            ("input_price_per_1m_usd", "REAL"),
+            ("output_price_per_1m_usd", "REAL"),
+        ):
+            if col not in usage_cols:
+                await self._conn.execute(
+                    f"ALTER TABLE usage_events ADD COLUMN {col} {ddl}"
+                )
+
+        price_cols = await self._table_columns("model_prices")
+        for col, ddl in (
+            ("version", "TEXT NOT NULL DEFAULT 'v1'"),
+            ("effective_from", "TEXT NOT NULL DEFAULT '1970-01-01T00:00:00+00:00'"),
+        ):
+            if col not in price_cols:
+                await self._conn.execute(
+                    f"ALTER TABLE model_prices ADD COLUMN {col} {ddl}"
+                )
+        await self._conn.commit()
 
     async def seed_prices(self) -> None:
         assert self._conn is not None
+        now = utc_now_iso()
         for model, inp, out in _DEFAULT_PRICES:
             await self._conn.execute(
                 """
-                INSERT OR IGNORE INTO model_prices(model, input_per_1m_usd, output_per_1m_usd)
-                VALUES (?, ?, ?)
+                INSERT OR IGNORE INTO model_prices(
+                    model, input_per_1m_usd, output_per_1m_usd, version, effective_from
+                ) VALUES (?, ?, ?, 'v1', ?)
                 """,
-                (model, inp, out),
+                (model, inp, out, now),
             )
         await self._conn.commit()
 
@@ -159,23 +203,94 @@ class Database:
         return int(row["id"]) if row else None
 
     async def get_model_price(self, model: str) -> tuple[float, float] | None:
+        quote = await self.get_price(model)
+        if quote is None:
+            return None
+        return quote.input_per_1m_usd, quote.output_per_1m_usd
+
+    async def get_price(self, model: str, *, at: str | None = None) -> PriceQuote | None:
+        """Return the current price quote (at is reserved for future history lookups)."""
+        _ = at  # extension point for effective-at queries
         row = await self.fetchone(
-            "SELECT input_per_1m_usd, output_per_1m_usd FROM model_prices WHERE model = ?",
+            """
+            SELECT model, input_per_1m_usd, output_per_1m_usd, version, effective_from
+            FROM model_prices WHERE model = ?
+            """,
             (model,),
         )
         if not row:
-            # prefix fallback: longest matching seeded prefix
-            rows = await self.fetchall("SELECT model, input_per_1m_usd, output_per_1m_usd FROM model_prices")
-            best: tuple[float, float] | None = None
+            rows = await self.fetchall(
+                """
+                SELECT model, input_per_1m_usd, output_per_1m_usd, version, effective_from
+                FROM model_prices
+                """
+            )
+            best: PriceQuote | None = None
             best_len = -1
             m = model.lower()
             for r in rows:
                 key = str(r["model"]).lower()
                 if m.startswith(key) and len(key) > best_len:
-                    best = (float(r["input_per_1m_usd"]), float(r["output_per_1m_usd"]))
+                    best = PriceQuote(
+                        model=str(r["model"]),
+                        input_per_1m_usd=float(r["input_per_1m_usd"]),
+                        output_per_1m_usd=float(r["output_per_1m_usd"]),
+                        version=str(r["version"] or "v1"),
+                        effective_from=str(r["effective_from"] or "1970-01-01T00:00:00+00:00"),
+                    )
                     best_len = len(key)
             return best
-        return float(row["input_per_1m_usd"]), float(row["output_per_1m_usd"])
+        return PriceQuote(
+            model=str(row["model"]),
+            input_per_1m_usd=float(row["input_per_1m_usd"]),
+            output_per_1m_usd=float(row["output_per_1m_usd"]),
+            version=str(row["version"] or "v1"),
+            effective_from=str(row["effective_from"] or "1970-01-01T00:00:00+00:00"),
+        )
+
+    async def set_price(
+        self,
+        model: str,
+        input_per_1m_usd: float,
+        output_per_1m_usd: float,
+        *,
+        version: str | None = None,
+        effective_from: str | None = None,
+    ) -> PriceQuote:
+        existing = await self.get_price(model)
+        if version is None:
+            if existing and str(existing.version).startswith("v"):
+                try:
+                    n = int(str(existing.version)[1:]) + 1
+                    version = f"v{n}"
+                except ValueError:
+                    version = "v2"
+            else:
+                version = "v1"
+        eff = effective_from or utc_now_iso()
+        await self.execute(
+            """
+            INSERT INTO model_prices(model, input_per_1m_usd, output_per_1m_usd, version, effective_from)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(model) DO UPDATE SET
+                input_per_1m_usd = excluded.input_per_1m_usd,
+                output_per_1m_usd = excluded.output_per_1m_usd,
+                version = excluded.version,
+                effective_from = excluded.effective_from
+            """,
+            (model, float(input_per_1m_usd), float(output_per_1m_usd), version, eff),
+        )
+        return PriceQuote(
+            model=model,
+            input_per_1m_usd=float(input_per_1m_usd),
+            output_per_1m_usd=float(output_per_1m_usd),
+            version=version,
+            effective_from=eff,
+        )
+
+    async def list_model_ids(self) -> list[str]:
+        rows = await self.fetchall("SELECT model FROM model_prices ORDER BY model")
+        return [str(r["model"]) for r in rows]
 
 
 # Optional process-global (tests inject via app.state.db)

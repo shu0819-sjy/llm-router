@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from app.failover.circuit_breaker import CircuitBreakerRegistry
+from app.failover.retry import classify_upstream_error, is_retryable
 from app.models import ChatRequest
 from app.providers.base import Provider, ProviderError, UpstreamError, UpstreamTimeout
 
@@ -37,7 +38,7 @@ class FailoverResult:
     elapsed_ms: float = 0.0
 
 
-# Errors that should trigger failover to the next candidate
+# Errors that should be considered for failover classification
 _FAILOVER_TYPES = (UpstreamTimeout, UpstreamError, TimeoutError, ConnectionError)
 
 
@@ -113,40 +114,43 @@ class FailoverOrchestrator:
                     elapsed_ms=(self._clock() - start) * 1000,
                 )
             except _FAILOVER_TYPES as exc:
-                # 4xx UpstreamError: do not failover (except 408/429 optional — keep simple: only 5xx/timeout)
-                if isinstance(exc, UpstreamError) and exc.status_code and 400 <= exc.status_code < 500:
-                    if exc.status_code not in (408, 429):
-                        breaker.record_failure()
-                        attempts.append(
-                            {
-                                "provider_id": provider.id,
-                                "ok": False,
-                                "error": str(exc),
-                                "status_code": exc.status_code,
-                                "elapsed_ms": (self._clock() - attempt_start) * 1000,
-                                "failover": False,
-                            }
-                        )
-                        raise FailoverExhausted(
-                            str(exc),
-                            last_error=exc,
-                            attempts=attempts,
-                            status_code=exc.status_code,
-                        ) from exc
+                classification = classify_upstream_error(exc)
                 breaker.record_failure()
+                if not classification.retryable:
+                    attempts.append(
+                        {
+                            "provider_id": provider.id,
+                            "ok": False,
+                            "error": str(exc),
+                            "status_code": classification.status_code,
+                            "elapsed_ms": (self._clock() - attempt_start) * 1000,
+                            "failover": False,
+                            "retry_class": classification.retry_class.value,
+                            "retry_reason": classification.reason,
+                        }
+                    )
+                    raise FailoverExhausted(
+                        str(exc),
+                        last_error=exc,
+                        attempts=attempts,
+                        status_code=classification.status_code or getattr(exc, "status_code", None) or 400,
+                    ) from exc
                 last_error = exc
                 attempts.append(
                     {
                         "provider_id": provider.id,
                         "ok": False,
                         "error": str(exc),
-                        "status_code": getattr(exc, "status_code", None),
+                        "status_code": classification.status_code or getattr(exc, "status_code", None),
                         "elapsed_ms": (self._clock() - attempt_start) * 1000,
                         "failover": True,
+                        "retry_class": classification.retry_class.value,
+                        "retry_reason": classification.reason,
                     }
                 )
                 continue
             except ProviderError as exc:
+                classification = classify_upstream_error(exc)
                 breaker.record_failure()
                 last_error = exc
                 attempts.append(
@@ -154,11 +158,15 @@ class FailoverOrchestrator:
                         "provider_id": provider.id,
                         "ok": False,
                         "error": str(exc),
-                        "status_code": getattr(exc, "status_code", None),
+                        "status_code": classification.status_code or getattr(exc, "status_code", None),
                         "elapsed_ms": (self._clock() - attempt_start) * 1000,
-                        "failover": False,
+                        "failover": is_retryable(exc),
+                        "retry_class": classification.retry_class.value,
+                        "retry_reason": classification.reason,
                     }
                 )
+                if is_retryable(exc):
+                    continue
                 raise FailoverExhausted(
                     str(exc),
                     last_error=exc,

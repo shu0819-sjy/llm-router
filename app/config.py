@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     port: int = Field(default=8000, alias="LLM_ROUTER_PORT")
     db_path: str = Field(default="./data/llm_router.db", alias="LLM_ROUTER_DB_PATH")
     admin_token: str = Field(default="", alias="LLM_ROUTER_ADMIN_TOKEN")
+    # production | development | test — insecure admin tokens only allowed in development/test
+    env: str = Field(default="production", alias="LLM_ROUTER_ENV")
+    # Optional HMAC secret for rate-limit bucket identities (falls back to admin token)
+    rate_limit_secret: str = Field(default="", alias="LLM_ROUTER_RATE_LIMIT_SECRET")
 
     default_timeout_ms: int = Field(default=500, alias="LLM_ROUTER_DEFAULT_TIMEOUT_MS")
     failover_budget_ms: int = Field(default=500, alias="LLM_ROUTER_FAILOVER_BUDGET_MS")

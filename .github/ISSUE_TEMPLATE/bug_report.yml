@@ -1,0 +1,49 @@
+name: Bug report
+description: Report unexpected behavior in llm-router
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. Do **not** include real API keys, admin tokens, or private hostnames.
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What went wrong?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps or sanitized config (placeholders only).
+      placeholder: |
+        1. Start with `docker compose up --build -d`
+        2. Call POST /v1/chat/completions with ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      description: Tag, release, or short commit SHA.
+    validations:
+      required: false
+  - type: dropdown
+    id: install
+    attributes:
+      label: How did you run it?
+      options:
+        - Docker Compose
+        - Local uvicorn / venv
+        - Other
+    validations:
+      required: false

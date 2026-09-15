@@ -1,7 +1,8 @@
 """Circuit breaker and failover orchestration."""
 
-from app.failover.circuit_breaker import CircuitBreaker, CircuitState, CircuitBreakerRegistry
-from app.failover.orchestrator import FailoverOrchestrator, FailoverExhausted
+from app.failover.circuit_breaker import CircuitBreaker, CircuitBreakerRegistry, CircuitState
+from app.failover.orchestrator import FailoverExhausted, FailoverOrchestrator
+from app.failover.retry import RetryClass, classify_upstream_error, is_retryable
 
 __all__ = [
     "CircuitBreaker",
@@ -9,4 +10,7 @@ __all__ = [
     "CircuitBreakerRegistry",
     "FailoverOrchestrator",
     "FailoverExhausted",
+    "RetryClass",
+    "classify_upstream_error",
+    "is_retryable",
 ]

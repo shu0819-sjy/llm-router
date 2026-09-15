@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -11,6 +11,15 @@ class ChatMessage(BaseModel):
     role: str
     content: str | list[Any] | None = None
     name: str | None = None
+    tool_calls: list[dict[str, Any]] | None = None
+    tool_call_id: str | None = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class ResponseFormat(BaseModel):
+    type: Literal["text", "json_object", "json_schema"] = "text"
+    json_schema: dict[str, Any] | None = None
 
     model_config = ConfigDict(extra="allow")
 
@@ -27,13 +36,24 @@ class ChatRequest(BaseModel):
     presence_penalty: float | None = None
     frequency_penalty: float | None = None
     user: str | None = None
+    # OpenAI tool / structured-output fields (forwarded to OpenAI-compatible upstreams)
+    tools: list[dict[str, Any]] | None = None
+    tool_choice: str | dict[str, Any] | None = None
+    response_format: ResponseFormat | dict[str, Any] | None = None
+    stream_options: dict[str, Any] | None = None
 
     model_config = ConfigDict(extra="allow")
+
+    def has_tools_or_format(self) -> bool:
+        return bool(self.tools or self.tool_choice or self.response_format)
 
 
 class ChatChoiceMessage(BaseModel):
     role: str
     content: str | None = None
+    tool_calls: list[dict[str, Any]] | None = None
+
+    model_config = ConfigDict(extra="allow")
 
 
 class ChatChoice(BaseModel):
@@ -41,11 +61,15 @@ class ChatChoice(BaseModel):
     message: ChatChoiceMessage
     finish_reason: str | None = "stop"
 
+    model_config = ConfigDict(extra="allow")
+
 
 class UsageInfo(BaseModel):
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
+
+    model_config = ConfigDict(extra="allow")
 
 
 class ChatCompletionResponse(BaseModel):
@@ -68,6 +92,20 @@ class ErrorDetail(BaseModel):
 
 class ErrorResponse(BaseModel):
     error: ErrorDetail
+
+
+class ModelCard(BaseModel):
+    id: str
+    object: str = "model"
+    created: int = 0
+    owned_by: str = "llm-router"
+
+    model_config = ConfigDict(extra="allow")
+
+
+class ModelListResponse(BaseModel):
+    object: str = "list"
+    data: list[ModelCard] = Field(default_factory=list)
 
 
 class ApiKeyRecord(BaseModel):

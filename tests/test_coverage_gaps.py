@@ -155,7 +155,9 @@ def test_http_model_not_allowlisted_403(test_settings: Settings) -> None:
             json={"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "x"}]},
         )
         assert r.status_code == 403
-        assert r.json()["detail"]["error"]["code"] == "model_not_allowed"
+        body = r.json()
+        err = body.get("error") or (body.get("detail") or {}).get("error") or {}
+        assert err.get("code") == "model_not_allowed"
 
 
 def test_http_no_providers_502(test_settings: Settings) -> None:
@@ -173,7 +175,9 @@ def test_http_no_providers_502(test_settings: Settings) -> None:
             json={"model": "deepseek-chat", "messages": [{"role": "user", "content": "x"}]},
         )
         assert r.status_code == 502
-        assert r.json()["detail"]["error"]["code"] == "no_providers"
+        body = r.json()
+        err = body.get("error") or (body.get("detail") or {}).get("error") or {}
+        assert err.get("code") == "no_providers"
 
 
 # ----- database -----
