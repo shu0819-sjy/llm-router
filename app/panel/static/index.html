@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>llm-router panel</title>
+  <link rel="stylesheet" href="/panel/static/styles.css" />
+</head>
+<body>
+  <header class="top">
+    <h1>llm-router <span class="muted">v0.1</span></h1>
+    <p class="muted">Admin panel — keys · providers · usage (no upstream secrets)</p>
+  </header>
+
+  <section class="card auth">
+    <label for="adminToken">Admin token</label>
+    <div class="row">
+      <input id="adminToken" type="password" placeholder="LLM_ROUTER_ADMIN_TOKEN" autocomplete="off" />
+      <button id="saveToken" type="button">Save</button>
+      <button id="refreshAll" type="button" class="secondary">Refresh</button>
+    </div>
+    <p id="authStatus" class="muted"></p>
+  </section>
+
+  <section class="card">
+    <h2>API Keys</h2>
+    <form id="createKeyForm" class="row wrap">
+      <input name="name" placeholder="name" required />
+      <input name="provider_id" placeholder="provider_id (optional)" />
+      <button type="submit">Create key</button>
+    </form>
+    <p id="createdKeyOnce" class="warn"></p>
+    <table>
+      <thead>
+        <tr><th>ID</th><th>Name</th><th>Hash prefix</th><th>Provider</th><th>Active</th><th></th></tr>
+      </thead>
+      <tbody id="keysBody"></tbody>
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>Providers</h2>
+    <table>
+      <thead>
+        <tr><th>ID</th><th>Enabled</th><th>Circuit</th><th>Base URL</th><th>Prefixes</th><th></th></tr>
+      </thead>
+      <tbody id="providersBody"></tbody>
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>Usage &amp; cost</h2>
+    <div id="usageSummary" class="stats"></div>
+    <h3>Recent events</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th><th>Key</th><th>Provider</th><th>Model</th>
+          <th>Tokens</th><th>Cost USD</th><th>Status</th><th>When</th>
+        </tr>
+      </thead>
+      <tbody id="usageBody"></tbody>
+    </table>
+  </section>
+
+  <script src="/panel/static/app.js"></script>
+</body>
+</html>
