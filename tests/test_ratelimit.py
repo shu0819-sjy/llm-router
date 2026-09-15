@@ -67,4 +67,5 @@ def test_http_429_with_retry_after(test_settings) -> None:
         assert r2.status_code == 429
         assert "Retry-After" in r2.headers
         body = r2.json()
-        assert body["detail"]["error"]["code"] == "rate_limit_exceeded"
+        err = body.get("error") or (body.get("detail") or {}).get("error") or {}
+        assert err.get("code") == "rate_limit_exceeded"

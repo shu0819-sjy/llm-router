@@ -27,10 +27,10 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.failover.circuit_breaker import CircuitBreakerRegistry
-from app.failover.orchestrator import FailoverOrchestrator
-from app.models import ChatRequest
-from app.providers.base import Provider, UpstreamTimeout
+from app.failover.circuit_breaker import CircuitBreakerRegistry  # noqa: E402
+from app.failover.orchestrator import FailoverOrchestrator  # noqa: E402
+from app.models import ChatRequest  # noqa: E402
+from app.providers.base import Provider, UpstreamTimeout  # noqa: E402
 
 
 class BenchProvider(Provider):

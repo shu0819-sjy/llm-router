@@ -11,8 +11,23 @@ from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, Field
 
 from app.db.database import hash_api_key, utc_now_iso
+from app.metrics.request_id import request_id_from_request
 from app.models import ApiKeyRecord
 from app.panel.auth import require_admin
+
+
+def _audit(request: Request, action: str, *, resource_type: str, resource_id: Any, detail: dict | None = None) -> None:
+    audit = getattr(request.app.state, "audit", None)
+    if audit is None:
+        return
+    audit.emit(
+        action,
+        actor="admin",
+        request_id=request_id_from_request(request),
+        resource_type=resource_type,
+        resource_id=resource_id,
+        detail=detail,
+    )
 
 router = APIRouter(prefix="/panel", tags=["panel"])
 
@@ -119,6 +134,13 @@ async def create_key(
             is_active=True,
         )
     )
+    _audit(
+        request,
+        "api_key.create",
+        resource_type="api_key",
+        resource_id=key_id,
+        detail={"name": body.name, "provider_id": body.provider_id},
+    )
     return {
         "id": key_id,
         "name": body.name,
@@ -149,6 +171,13 @@ async def delete_key(
         if rec.id == key_id:
             rec.is_active = False
             del kr._keys_by_value[raw]
+    _audit(
+        request,
+        "api_key.deactivate",
+        resource_type="api_key",
+        resource_id=key_id,
+        detail={"deactivated": True},
+    )
     return {"ok": True, "id": key_id, "deactivated": True}
 
 
@@ -209,6 +238,16 @@ async def patch_provider(
         ),
     )
     breakers = request.app.state.breakers
+    _audit(
+        request,
+        "provider.patch",
+        resource_type="provider",
+        resource_id=provider_id,
+        detail={
+            "enabled": provider.enabled,
+            "base_url": getattr(provider, "base_url", ""),
+        },
+    )
     return {
         "id": provider_id,
         "enabled": provider.enabled,

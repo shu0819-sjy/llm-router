@@ -2,8 +2,18 @@
 
 from app.streaming.sse import (
     SSE_CONTENT_TYPE,
+    StreamStart,
+    StreamUsage,
     iter_openai_sse,
+    iter_openai_sse_with_usage,
     stream_chat_with_failover,
 )
 
-__all__ = ["SSE_CONTENT_TYPE", "iter_openai_sse", "stream_chat_with_failover"]
+__all__ = [
+    "SSE_CONTENT_TYPE",
+    "StreamStart",
+    "StreamUsage",
+    "iter_openai_sse",
+    "iter_openai_sse_with_usage",
+    "stream_chat_with_failover",
+]

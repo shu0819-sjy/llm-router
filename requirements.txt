@@ -1,7 +1,11 @@
-fastapi>=0.110.0
-uvicorn[standard]>=0.27.0
-httpx>=0.27.0
-pydantic>=2.6.0
-pydantic-settings>=2.2.0
-python-dotenv>=1.0.0
-aiosqlite>=0.20.0
+# Pinned direct runtime dependencies for reproducible installs / Docker builds.
+# Refresh: bump pins deliberately, then `pip install -r requirements.txt`
+# and re-run the test + Docker verify commands. See CONTRIBUTING.md.
+
+fastapi==0.133.1
+uvicorn[standard]==0.41.0
+httpx==0.28.1
+pydantic==2.13.4
+pydantic-settings==2.13.1
+python-dotenv==1.2.2
+aiosqlite==0.22.1

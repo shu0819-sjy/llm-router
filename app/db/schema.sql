@@ -1,4 +1,4 @@
--- llm-router v0.1 SQLite schema
+-- llm-router v0.2 SQLite schema
 
 CREATE TABLE IF NOT EXISTS api_keys (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -33,14 +33,21 @@ CREATE TABLE IF NOT EXISTS usage_events (
     latency_ms INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL,
     request_id TEXT,
+    accounting_status TEXT NOT NULL DEFAULT 'actual',
+    price_version TEXT,
+    input_price_per_1m_usd REAL,
+    output_price_per_1m_usd REAL,
     created_at TEXT NOT NULL,
     FOREIGN KEY (api_key_id) REFERENCES api_keys(id)
 );
 
+-- Current price per model (versioned). Historical costs rely on snapshots on usage_events.
 CREATE TABLE IF NOT EXISTS model_prices (
     model TEXT PRIMARY KEY,
     input_per_1m_usd REAL NOT NULL DEFAULT 0,
-    output_per_1m_usd REAL NOT NULL DEFAULT 0
+    output_per_1m_usd REAL NOT NULL DEFAULT 0,
+    version TEXT NOT NULL DEFAULT 'v1',
+    effective_from TEXT NOT NULL DEFAULT '1970-01-01T00:00:00+00:00'
 );
 
 CREATE INDEX IF NOT EXISTS idx_usage_created ON usage_events(created_at);
