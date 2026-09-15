@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.3.0] — 2026-09-16
+
+Hardening release on top of v0.2.0. Public API surface unchanged: OpenAI compatibility remains Chat Completions (JSON + SSE) and the Models list only.
+
+### Security
+
+- Production admin-token quality policy (minimum length / reject weak placeholders outside development)
+- Request body, message/tool-count, and concurrent chat limits with OpenAI-shaped `413` / `400` / `429` envelopes
+- Provider base-URL SSRF controls (scheme/host validation; private targets blocked outside explicit development override)
+- Diagnostics/metrics access policy (provider inventory and `/metrics` gated per configuration)
+- Client error sanitization: SSE mid-stream errors emit a fixed public message; `failover_exhausted` responses omit raw attempt payloads; messages are bounded/redacted before leaving the process
+
+### Fixed
+
+- Failover candidates restricted to providers whose model prefixes (and capabilities) match the request — unrelated providers are no longer appended
+- Forced-provider keys requesting an unsupported model return router-level `400` (`forced_provider_model_mismatch`); unknown models return `400` (`model_not_supported`)
+- Environment-managed API keys (`LLM_ROUTER_API_KEYS`) carry `source=env` and are deactivated when removed; panel-managed keys are preserved across restarts
+- Streaming usage rows distinguish `ok` (after `[DONE]`), `partial`, `upstream_error`, and `client_disconnected`, with measured TTFB (`ttfb_ms`) and total latency (no hardcoded `latency_ms=0`)
+- SQLite uses WAL + `busy_timeout` + `synchronous=NORMAL`; usage ledger writes retry on lock/busy
+- Mid-stream disconnect usage accounting survives response cancellation via background persistence
+
+### Added
+
+- `StorageBundle` dependency injection (SQLite default; in-memory test double; no Redis/PostgreSQL production backend claimed)
+- Additive `usage_events.ttfb_ms` column (schema + migration)
+- Opt-in live provider integration matrix (`tests/integration/`): provider × {sync, SSE} × {plain, tools}, double-gated off by default
+- `scripts/restart_migration_smoke.py` Docker restart/migration smoke on a clean temporary volume (packaged-defaults smoke, not production validation)
+- CI: mypy as a hard gate; integration-lane skip assertion; Docker restart/migration smoke job
+
+### Changed
+
+- CI type check is a **hard gate** (`mypy app`); residual `disable_error_code` list is documented and itemized
+- Docker base image digest-pinned; direct dependency pins documented in `requirements.txt`
+- Public compatibility claims narrowed in README / release notes (explicit unsupported OpenAI endpoints and provider capability caveats)
+
+### Compatibility (docs)
+
+- Authoritative scope: `POST /v1/chat/completions` (JSON + SSE) and `GET /v1/models` only
+- Explicitly unsupported: legacy completions, embeddings, images, audio, files, batches, fine-tuning
+- Tools / structured-output forwarded to OpenAI-compatible upstreams only; Anthropic-routed tool fields are rejected with `400`
+
 ## [0.2.0] — 2026-03-22
 
 ### Security

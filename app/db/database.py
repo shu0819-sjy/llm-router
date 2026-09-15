@@ -13,6 +13,10 @@ from app.db.cost import PriceQuote
 
 _SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 
+# SQLite reliability defaults applied on every connect().
+# Bounded write retries for lock/busy live on UsageLedger (ledger consumer).
+SQLITE_BUSY_TIMEOUT_MS = 5000
+
 # Seed prices (USD per 1M tokens) — illustrative defaults
 _DEFAULT_PRICES: list[tuple[str, float, float]] = [
     ("gpt-4o-mini", 0.15, 0.60),
@@ -56,11 +60,29 @@ class Database:
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         self._conn = await aiosqlite.connect(self.path)
         self._conn.row_factory = aiosqlite.Row
-        await self._conn.execute("PRAGMA foreign_keys = ON")
+        await self._apply_reliability_pragmas()
         await self.init_schema()
+
+    async def _apply_reliability_pragmas(self) -> None:
+        """
+        WAL + busy_timeout + NORMAL synchronous for concurrent write reliability.
+
+        Idempotent; safe to re-run from app startup helpers. Write-path retries
+        for transient ``database is locked`` remain on UsageLedger.
+        """
+        assert self._conn is not None
+        await self._conn.execute("PRAGMA foreign_keys = ON")
+        await self._conn.execute("PRAGMA journal_mode=WAL")
+        await self._conn.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}")
+        await self._conn.execute("PRAGMA synchronous=NORMAL")
 
     async def close(self) -> None:
         if self._conn is not None:
+            # Best-effort WAL checkpoint so -wal/-shm settle before close.
+            try:
+                await self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            except Exception:
+                pass
             await self._conn.close()
             self._conn = None
 
@@ -87,6 +109,8 @@ class Database:
             ("price_version", "TEXT"),
             ("input_price_per_1m_usd", "REAL"),
             ("output_price_per_1m_usd", "REAL"),
+            # Stream time-to-first-byte; additive for v0.2 → v0.3 databases.
+            ("ttfb_ms", "INTEGER NOT NULL DEFAULT 0"),
         ):
             if col not in usage_cols:
                 await self._conn.execute(
@@ -102,6 +126,13 @@ class Database:
                 await self._conn.execute(
                     f"ALTER TABLE model_prices ADD COLUMN {col} {ddl}"
                 )
+
+        key_cols = await self._table_columns("api_keys")
+        if "source" not in key_cols:
+            # Existing rows default to panel-managed; hydrate/sync retags env keys.
+            await self._conn.execute(
+                "ALTER TABLE api_keys ADD COLUMN source TEXT NOT NULL DEFAULT 'panel'"
+            )
         await self._conn.commit()
 
     async def seed_prices(self) -> None:
@@ -151,36 +182,69 @@ class Database:
         rate_capacity: float | None = None,
         rate_refill_per_s: float | None = None,
         is_active: bool = True,
+        source: str | None = None,
+        update_active: bool = False,
     ) -> int:
+        """
+        Insert or update an API key by hash.
+
+        ``source`` is ``'env'`` (LLM_ROUTER_API_KEYS) or ``'panel'`` (admin UI).
+        On update, ``is_active`` is left unchanged unless ``update_active=True``
+        so environment re-assertion cannot silently undo a panel revocation.
+        """
         key_hash = hash_api_key(raw_key)
         existing = await self.fetchone(
-            "SELECT id FROM api_keys WHERE key_hash = ?", (key_hash,)
+            "SELECT id, source FROM api_keys WHERE key_hash = ?", (key_hash,)
         )
         if existing:
-            await self.execute(
-                """
-                UPDATE api_keys
-                SET name = ?, provider_id = ?, model_allowlist = ?,
-                    rate_capacity = ?, rate_refill_per_s = ?, is_active = ?
-                WHERE id = ?
-                """,
-                (
-                    name,
-                    provider_id,
-                    model_allowlist,
-                    rate_capacity,
-                    rate_refill_per_s,
-                    1 if is_active else 0,
-                    int(existing["id"]),
-                ),
-            )
-            return int(existing["id"])
+            key_id = int(existing["id"])
+            if update_active:
+                await self.execute(
+                    """
+                    UPDATE api_keys
+                    SET name = ?, provider_id = ?, model_allowlist = ?,
+                        rate_capacity = ?, rate_refill_per_s = ?, is_active = ?,
+                        source = COALESCE(?, source)
+                    WHERE id = ?
+                    """,
+                    (
+                        name,
+                        provider_id,
+                        model_allowlist,
+                        rate_capacity,
+                        rate_refill_per_s,
+                        1 if is_active else 0,
+                        source,
+                        key_id,
+                    ),
+                )
+            else:
+                await self.execute(
+                    """
+                    UPDATE api_keys
+                    SET name = ?, provider_id = ?, model_allowlist = ?,
+                        rate_capacity = ?, rate_refill_per_s = ?,
+                        source = COALESCE(?, source)
+                    WHERE id = ?
+                    """,
+                    (
+                        name,
+                        provider_id,
+                        model_allowlist,
+                        rate_capacity,
+                        rate_refill_per_s,
+                        source,
+                        key_id,
+                    ),
+                )
+            return key_id
+        src = source if source is not None else "panel"
         cur = await self.execute(
             """
             INSERT INTO api_keys(
                 key_hash, name, provider_id, model_allowlist,
-                rate_capacity, rate_refill_per_s, is_active, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                rate_capacity, rate_refill_per_s, is_active, source, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 key_hash,
@@ -190,10 +254,52 @@ class Database:
                 rate_capacity,
                 rate_refill_per_s,
                 1 if is_active else 0,
+                src,
                 utc_now_iso(),
             ),
         )
         return int(cur.lastrowid)
+
+    async def sync_environment_keys(self, items: list[dict[str, Any]]) -> dict[str, int]:
+        """
+        Upsert keys from ``LLM_ROUTER_API_KEYS`` with ``source='env'`` and
+        deactivate environment-managed keys whose hashes are no longer present.
+
+        Panel-managed keys are never deactivated by this method.
+        Present env keys are refreshed but not force-reactivated (``update_active``
+        stays false) so panel revocation remains durable against env re-assertion.
+        """
+        present_hashes: set[str] = set()
+        upserted = 0
+        for item in items:
+            raw = str(item["key"])
+            present_hashes.add(hash_api_key(raw))
+            await self.upsert_api_key(
+                raw_key=raw,
+                name=str(item.get("name") or "env"),
+                provider_id=item.get("provider_id"),  # type: ignore[arg-type]
+                source="env",
+                is_active=True,
+                update_active=False,
+            )
+            upserted += 1
+        deactivated = await self.deactivate_missing_env_keys(present_hashes)
+        return {"upserted": upserted, "deactivated": deactivated}
+
+    async def deactivate_missing_env_keys(self, present_hashes: set[str]) -> int:
+        """Deactivate ``source='env'`` rows whose key_hash is not in ``present_hashes``."""
+        rows = await self.fetchall(
+            "SELECT id, key_hash FROM api_keys WHERE source = 'env' AND is_active = 1"
+        )
+        deactivated = 0
+        for row in rows:
+            if str(row["key_hash"]) not in present_hashes:
+                await self.execute(
+                    "UPDATE api_keys SET is_active = 0 WHERE id = ?",
+                    (int(row["id"]),),
+                )
+                deactivated += 1
+        return deactivated
 
     async def get_api_key_id_by_raw(self, raw_key: str) -> int | None:
         row = await self.fetchone(

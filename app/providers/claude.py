@@ -19,6 +19,8 @@ class ClaudeProvider(Provider):
 
     id = "anthropic"
     supported_prefixes = ["claude-"]
+    # Anthropic adapter does not map tools / response_format in this release.
+    capabilities: frozenset[str] = frozenset()
 
     def __init__(
         self,
@@ -32,6 +34,7 @@ class ClaudeProvider(Provider):
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.enabled = bool(api_key) if enabled is None else enabled
+        self.capabilities = type(self).capabilities
         self.anthropic_version = anthropic_version
         self._owns_client = client is None
         self._client = client or httpx.AsyncClient(

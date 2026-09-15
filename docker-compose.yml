@@ -4,7 +4,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: llm-router:0.2.0
+    image: llm-router:0.3.0
     container_name: llm-router
     ports:
       - "8000:8000"

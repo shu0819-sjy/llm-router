@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from app.api.errors import ensure_openai_handlers, openai_error_response
+from app.api.errors import (
+    ensure_openai_handlers,
+    openai_error_response,
+    sanitize_client_error_message,
+)
 from app.api.models import list_models
 from app.auth import require_api_key
 from app.failover.orchestrator import FailoverExhausted
@@ -26,6 +32,33 @@ router = APIRouter(
     tags=["chat"],
     dependencies=[Depends(ensure_openai_handlers)],
 )
+
+logger = logging.getLogger("llm_router.chat")
+
+
+def _spawn_usage_record(request: Request, coro: Any) -> asyncio.Task[Any]:
+    """
+    Run usage accounting outside the streaming response cancel scope.
+
+    Client disconnect / BaseHTTPMiddleware cancellation aborts awaits inside
+    ``StreamingResponse`` generators; a background task kept on ``app.state``
+    still persists the usage row.
+    """
+
+    async def _runner() -> None:
+        try:
+            await coro
+        except Exception:  # noqa: BLE001 — never fail the stream on ledger errors
+            logger.exception("stream usage accounting failed")
+
+    task = asyncio.get_running_loop().create_task(_runner())
+    bucket: set[asyncio.Task[Any]] | None = getattr(request.app.state, "_bg_usage_tasks", None)
+    if bucket is None:
+        bucket = set()
+        request.app.state._bg_usage_tasks = bucket
+    bucket.add(task)
+    task.add_done_callback(bucket.discard)
+    return task
 
 # OpenAI-compatible model list lives on the same /v1 router (no main.py wiring).
 router.add_api_route(
@@ -121,6 +154,29 @@ def _reject_unsupported_tools(body: ChatRequest, provider_ids: list[str]) -> JSO
     return None
 
 
+def _usage_store(request: Request) -> Any:
+    """Prefer StorageBundle.usage when injected; fall back to app.state.ledger."""
+    storage = getattr(request.app.state, "storage", None)
+    if storage is not None and getattr(storage, "usage", None) is not None:
+        return storage.usage
+    return getattr(request.app.state, "ledger", None)
+
+
+def _as_latency_ms(ms: float | None, *, saw_bytes: bool = False) -> int:
+    """
+    Integer millisecond column helper.
+
+    Sub-millisecond streams would otherwise truncate to 0 via int(); when the
+    client observed at least one byte, floor to 1 so accounting is non-zero.
+    """
+    if ms is None:
+        return 0
+    value = int(round(float(ms)))
+    if saw_bytes and value <= 0:
+        return 1
+    return max(0, value)
+
+
 async def _record_usage(
     request: Request,
     *,
@@ -132,9 +188,11 @@ async def _record_usage(
     status: str,
     accounting_status: str = "actual",
     request_id: str | None = None,
+    ttfb_ms: float | None = None,
 ) -> None:
-    ledger = getattr(request.app.state, "ledger", None)
+    ledger = _usage_store(request)
     db = getattr(request.app.state, "db", None)
+    storage = getattr(request.app.state, "storage", None)
     metrics = getattr(request.app.state, "metrics", None)
     if ledger is None:
         return
@@ -145,9 +203,14 @@ async def _record_usage(
         prompt = 0
         completion = 0
     api_key_id = api_key.id
-    if api_key_id is None and db is not None:
-        api_key_id = await db.get_api_key_id_by_raw(api_key.key)
+    if api_key_id is None:
+        key_port = getattr(storage, "api_keys", None) if storage is not None else None
+        if key_port is not None and hasattr(key_port, "get_api_key_id_by_raw"):
+            api_key_id = await key_port.get_api_key_id_by_raw(api_key.key)
+        elif db is not None:
+            api_key_id = await db.get_api_key_id_by_raw(api_key.key)
     rid = request_id or request_id_from_request(request)
+    ttfb_arg = int(ttfb_ms) if ttfb_ms is not None else None
     await ledger.record(
         api_key_id=api_key_id,
         provider_id=provider_id,
@@ -158,6 +221,7 @@ async def _record_usage(
         status=status,
         request_id=rid,
         accounting_status=accounting_status,
+        ttfb_ms=ttfb_arg,
     )
     if metrics is not None:
         metrics.add_tokens(prompt, completion)
@@ -190,6 +254,31 @@ async def chat_completions(
                     "code": "model_not_allowed",
                 }
             },
+        )
+    if decision.reason == "forced_provider_model_mismatch":
+        forced = api_key.provider_id or "unknown"
+        return openai_error_response(
+            400,
+            (
+                f"Forced provider '{forced}' does not support model '{body.model}' "
+                "(prefix or capability mismatch); no upstream request was made."
+            ),
+            type="invalid_request_error",
+            code="forced_provider_model_mismatch",
+            param="model",
+            headers=rate_headers,
+        )
+    if decision.reason == "model_not_supported":
+        return openai_error_response(
+            400,
+            (
+                f"No enabled provider supports model '{body.model}' "
+                "(no matching prefix/capabilities); no upstream request was made."
+            ),
+            type="invalid_request_error",
+            code="model_not_supported",
+            param="model",
+            headers=rate_headers,
         )
     if not decision.candidates:
         raise HTTPException(
@@ -228,14 +317,19 @@ async def chat_completions(
                 accounting_status="unavailable",
                 request_id=request_id,
             )
+            # attempts retained server-side (exc.attempts) for metrics/logs only.
+            logger.info(
+                "failover_exhausted stream request_id=%s attempts=%s",
+                request_id,
+                exc.attempts,
+            )
             return JSONResponse(
                 status_code=exc.status_code,
                 content={
                     "error": {
-                        "message": exc.message,
+                        "message": sanitize_client_error_message(exc.message),
                         "type": "api_error",
                         "code": "failover_exhausted",
-                        "attempts": exc.attempts,
                     }
                 },
                 headers=rate_headers,
@@ -246,27 +340,46 @@ async def chat_completions(
                 async for chunk in iter_openai_sse_with_usage(started.chunks, started.usage):
                     yield chunk
                     if await request.is_disconnected():
+                        started.usage.client_disconnected = True
                         break
             finally:
                 # Honest accounting after stream completes (or client disconnect).
-                await _record_usage(
+                # Spawn outside the response cancel scope so disconnect cannot
+                # drop the usage row (shield alone is insufficient under anyio).
+                if started.usage.duration_ms is None:
+                    started.usage.mark_finished()
+                saw_bytes = started.usage.ttfb_ms is not None
+                task = _spawn_usage_record(
                     request,
-                    api_key=api_key,
-                    provider_id=started.provider_id,
-                    model=body.model,
-                    response={
-                        "id": request_id,
-                        "usage": {
-                            "prompt_tokens": started.usage.prompt_tokens,
-                            "completion_tokens": started.usage.completion_tokens,
-                            "total_tokens": started.usage.total_tokens,
+                    _record_usage(
+                        request,
+                        api_key=api_key,
+                        provider_id=started.provider_id,
+                        model=body.model,
+                        response={
+                            "id": request_id,
+                            "usage": {
+                                "prompt_tokens": started.usage.prompt_tokens,
+                                "completion_tokens": started.usage.completion_tokens,
+                                "total_tokens": started.usage.total_tokens,
+                            },
                         },
-                    },
-                    latency_ms=0,
-                    status="ok",
-                    accounting_status=started.usage.accounting_status,
-                    request_id=request_id,
+                        latency_ms=_as_latency_ms(
+                            started.usage.duration_ms, saw_bytes=saw_bytes
+                        ),
+                        status=started.usage.outcome,
+                        accounting_status=started.usage.accounting_status,
+                        request_id=request_id,
+                        ttfb_ms=_as_latency_ms(started.usage.ttfb_ms, saw_bytes=saw_bytes),
+                    ),
                 )
+                # Best-effort wait when not cancelled; ignore cancel on wait.
+                try:
+                    await asyncio.shield(task)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.exception("stream usage wait failed")
 
         headers = {
             **rate_headers,
@@ -295,14 +408,19 @@ async def chat_completions(
             accounting_status="unavailable",
             request_id=request_id,
         )
+        # attempts retained server-side (exc.attempts) for metrics/logs only.
+        logger.info(
+            "failover_exhausted sync request_id=%s attempts=%s",
+            request_id,
+            exc.attempts,
+        )
         return JSONResponse(
             status_code=exc.status_code,
             content={
                 "error": {
-                    "message": exc.message,
+                    "message": sanitize_client_error_message(exc.message),
                     "type": "api_error",
                     "code": "failover_exhausted",
-                    "attempts": exc.attempts,
                 }
             },
             headers=rate_headers,

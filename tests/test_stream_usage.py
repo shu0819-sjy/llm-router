@@ -92,8 +92,9 @@ async def test_post_first_byte_error_emits_sse_error_no_raise() -> None:
     async for c in iter_openai_sse_with_usage(src(), usage):
         chunks.append(c)
     assert any(b"stream_error" in c for c in chunks)
-    # Should not raise to the caller
-    assert chunks[-1] == sse_error_event("upstream cut", code="stream_error")
+    # Fixed public message — raw exception text is logged server-side only.
+    assert chunks[-1] == sse_error_event("Upstream stream error", code="stream_error")
+    assert b"upstream cut" not in chunks[-1]
 
 
 class _KeepaliveThenData(FakeProvider):

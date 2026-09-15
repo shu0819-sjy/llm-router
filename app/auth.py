@@ -55,17 +55,79 @@ def is_insecure_admin_token(token: str | None) -> bool:
     return normalized.lower() in INSECURE_ADMIN_TOKENS
 
 
+# ---------------------------------------------------------------------------
+# Production admin-token quality policy (v0.3)
+#
+# A production admin token (LLM_ROUTER_ADMIN_TOKEN) must satisfy ALL of:
+#   1. Present and not a well-known placeholder (INSECURE_ADMIN_TOKENS).
+#   2. At least ``min_length`` characters (default 24; configurable via
+#      LLM_ROUTER_ADMIN_TOKEN_MIN_LENGTH, floor 8).
+#   3. No embedded whitespace.
+#   4. At least 3 of the 4 character classes: lowercase, uppercase, digits,
+#      symbols — so trivially guessable / single-class strings are rejected.
+#   5. Not a single repeated character.
+#
+# Development mode (LLM_ROUTER_ENV=development|dev|test) remains an explicit
+# escape hatch: the policy is not enforced there so local uvicorn works with
+# placeholder tokens, but the deployment is then explicitly non-production.
+# ---------------------------------------------------------------------------
+
+DEFAULT_ADMIN_TOKEN_MIN_LENGTH = 24
+
+
+def admin_token_quality_issues(
+    token: str | None,
+    *,
+    min_length: int = DEFAULT_ADMIN_TOKEN_MIN_LENGTH,
+) -> list[str]:
+    """Return the list of policy violations for an admin token (empty = compliant)."""
+    normalized = normalize_admin_token(token)
+    if not normalized:
+        return ["token is empty (set LLM_ROUTER_ADMIN_TOKEN)"]
+    if is_insecure_admin_token(normalized):
+        return ["token is a well-known insecure placeholder"]
+    issues: list[str] = []
+    if any(ch.isspace() for ch in normalized):
+        issues.append("token contains whitespace")
+    if len(normalized) < min_length:
+        issues.append(
+            f"token is shorter than the required minimum of {min_length} characters"
+        )
+    classes = (
+        any(c.islower() for c in normalized),
+        any(c.isupper() for c in normalized),
+        any(c.isdigit() for c in normalized),
+        any(not c.isalnum() for c in normalized),
+    )
+    if sum(classes) < 3:
+        issues.append(
+            "token must mix at least 3 of: lowercase, uppercase, digits, symbols"
+        )
+    if len(set(normalized)) == 1:
+        issues.append("token is a single repeated character")
+    return issues
+
+
 def assert_secure_admin_token(settings: Settings) -> None:
     """
-    Hard-fail outside development when admin token is missing or a known placeholder.
-    Call from application startup.
+    Hard-fail outside development when the admin token violates the quality
+    policy above. Call from application startup.
     """
     if is_development_mode(settings):
         return
-    if is_insecure_admin_token(settings.admin_token):
+    min_length = int(
+        getattr(settings, "admin_token_min_length", DEFAULT_ADMIN_TOKEN_MIN_LENGTH)
+        or DEFAULT_ADMIN_TOKEN_MIN_LENGTH
+    )
+    issues = admin_token_quality_issues(settings.admin_token, min_length=min_length)
+    if issues:
         raise RuntimeError(
-            "LLM_ROUTER_ADMIN_TOKEN is missing or uses an insecure placeholder. "
-            "Set a strong unique token, or set LLM_ROUTER_ENV=development for local use only."
+            "LLM_ROUTER_ADMIN_TOKEN fails the production admin-token policy: "
+            + "; ".join(issues)
+            + ". Set a strong unique token (>= "
+            + str(min_length)
+            + " characters, mixed character classes) or set "
+            "LLM_ROUTER_ENV=development for local use only."
         )
 
 

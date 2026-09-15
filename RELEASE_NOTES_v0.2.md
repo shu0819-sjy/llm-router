@@ -51,3 +51,12 @@ Hardening release focused on safer defaults, OpenAI-compatible protocol polish, 
 3. Prefer `/health/ready` for orchestrator readiness probes if desired.
 
 See [CHANGELOG.md](./CHANGELOG.md) for the full list.
+
+## Post-release clarification: compatibility scope
+
+Added after the v0.2.0 release to keep claims precise. v0.2.0's "OpenAI-compatible" API surface is exactly:
+
+- `POST /v1/chat/completions` — JSON and SSE (`stream=true`)
+- `GET /v1/models`
+
+No other OpenAI endpoints are implemented (`/v1/completions`, embeddings, images, audio, files, batches, fine-tuning are not supported). `tools` / `tool_choice` / `response_format` are forwarded as-is to OpenAI-compatible upstreams only; Anthropic-routed requests carrying these fields are rejected with `400`. See the README "Compatibility scope" section for the current, authoritative list.

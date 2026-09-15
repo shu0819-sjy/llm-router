@@ -1,5 +1,9 @@
 # llm-router — build context must be this repo root only
-FROM python:3.11-slim
+# Base image is pinned by digest for reproducible builds. To refresh: pull the
+# new tag, replace the digest below (docker image inspect python:3.11-slim
+# --format '{{index .RepoDigests 0}}'), and re-run CI plus the restart/migration
+# smoke (scripts/restart_migration_smoke.py).
+FROM python:3.11-slim@sha256:9534e5a8e315485d4061ed659af0fd78a284c015f9b73661b41d6bab25604534
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -14,7 +18,9 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 10001 --shell /usr/sbin/nologin appuser
 
-# Install from the pinned lock-style requirements for reproducible images
+# Install from the pinned lock-style requirements for reproducible images.
+# All direct runtime dependencies are exact-pinned in requirements.txt, so the
+# image contents vary only with the base digest above and these pins.
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 

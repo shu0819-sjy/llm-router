@@ -15,6 +15,9 @@ from app.providers.base import Provider, UpstreamError, UpstreamTimeout
 class OpenAICompatProvider(Provider):
     """Thin httpx adapter for OpenAI Chat Completions-compatible APIs."""
 
+    # OpenAI-compatible upstreams forward tools / tool_choice / response_format.
+    capabilities: frozenset[str] = frozenset({"tools", "tool_choice", "structured_output"})
+
     def __init__(
         self,
         *,
@@ -30,6 +33,7 @@ class OpenAICompatProvider(Provider):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.enabled = bool(api_key) if enabled is None else enabled
+        self.capabilities = type(self).capabilities
         self._owns_client = client is None
         # trust_env=False: ignore broken HTTP(S)_PROXY from the host shell
         self._client = client or httpx.AsyncClient(

@@ -1,4 +1,7 @@
 # Development / CI tools. Install: pip install -r requirements-dev.txt
+# Includes the runtime pins so CI and local dev resolve the same versions.
+# Tool versions below are part of the reproducible CI gate set (ruff and mypy
+# results must not silently drift between contributor machines and CI).
 -r requirements.txt
 
 pytest==9.1.1

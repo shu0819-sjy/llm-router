@@ -10,6 +10,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, Field
 
+from app.auth import is_development_mode
+from app.config import UnsafeProviderUrlError, validate_provider_base_url
 from app.db.database import hash_api_key, utc_now_iso
 from app.metrics.request_id import request_id_from_request
 from app.models import ApiKeyRecord
@@ -218,7 +220,27 @@ async def patch_provider(
     if body.enabled is not None:
         provider.enabled = body.enabled
     if body.base_url is not None and hasattr(provider, "base_url"):
-        provider.base_url = body.base_url.rstrip("/")
+        # SSRF policy: unsafe schemes / loopback / link-local / private targets
+        # are rejected (DNS-aware). LLM_ROUTER_ALLOW_PRIVATE_PROVIDER_URLS is
+        # the explicit development-only override.
+        settings = request.app.state.settings
+        allow_private = bool(
+            getattr(settings, "allow_private_provider_urls", False)
+        ) and is_development_mode(settings)
+        try:
+            safe_url = validate_provider_base_url(body.base_url, allow_private=allow_private)
+        except UnsafeProviderUrlError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": {
+                        "message": f"Rejected provider base URL: {exc}",
+                        "type": "invalid_request_error",
+                        "code": "unsafe_provider_url",
+                    }
+                },
+            ) from exc
+        provider.base_url = safe_url
     # Persist lightweight row (no secrets)
     db = request.app.state.db
     await db.execute(

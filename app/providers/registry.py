@@ -46,6 +46,19 @@ class ProviderRegistry:
         scored.sort(key=lambda x: x[0], reverse=True)
         return [p for _, p in scored]
 
+    def compatible(
+        self,
+        model: str,
+        *,
+        require_capabilities: list[str] | set[str] | frozenset[str] | None = None,
+    ) -> list[Provider]:
+        """Prefix-matched providers, optionally filtered by declared capabilities."""
+        matched = self.match_by_model(model)
+        if not require_capabilities:
+            return matched
+        needed = frozenset(require_capabilities)
+        return [p for p in matched if p.supports_capabilities(needed)]
+
     async def aclose(self) -> None:
         for p in self._providers.values():
             await p.aclose()

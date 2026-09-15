@@ -1,12 +1,155 @@
-"""Runtime configuration from environment / .env (no secrets committed)."""
+"""Runtime configuration from environment / .env (no secrets committed).
+
+Security boundary knobs (v0.3 hardening):
+- ``LLM_ROUTER_ADMIN_TOKEN_MIN_LENGTH`` — production admin-token quality floor.
+- ``LLM_ROUTER_MAX_BODY_BYTES`` / ``MAX_MESSAGES`` / ``MAX_TOOLS`` — request
+  size and chat-schema bounds enforced at the ASGI boundary.
+- ``LLM_ROUTER_MAX_CONCURRENT_CHAT_REQUESTS`` — in-flight chat request cap.
+- ``LLM_ROUTER_ALLOW_PRIVATE_PROVIDER_URLS`` — development-only override that
+  permits loopback/private provider base URLs (refused in production).
+- ``LLM_ROUTER_DIAGNOSTICS_AUTH`` — auth policy for /metrics and
+  /health/providers ("auto" | "admin" | "public").
+"""
 
 from __future__ import annotations
 
+import ipaddress
+import socket
 from functools import lru_cache
 from typing import Any
+from urllib.parse import urlsplit
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# ---------------------------------------------------------------------------
+# Provider base-URL SSRF policy
+# ---------------------------------------------------------------------------
+
+_SAFE_URL_SCHEMES = frozenset({"http", "https"})
+_LOCAL_HOSTNAMES = frozenset({"localhost", "ip6-localhost", "ip6-loopback"})
+_LOCAL_HOST_SUFFIXES = (".localhost", ".local", ".internal")
+
+
+class UnsafeProviderUrlError(ValueError):
+    """A provider base URL violates the SSRF-safe target policy."""
+
+
+def _unsafe_ip_reason(ip: Any) -> str | None:
+    """Return a short reason string when an IP targets a forbidden range."""
+    mapped = getattr(ip, "ipv4_mapped", None)
+    for candidate in (ip, mapped):
+        if candidate is None:
+            continue
+        if candidate.is_loopback:
+            return "loopback address"
+        if candidate.is_link_local:
+            return "link-local address"
+        if candidate.is_private:
+            return "private address"
+        if candidate.is_unspecified:
+            return "unspecified address"
+        if candidate.is_multicast:
+            return "multicast address"
+        if candidate.is_reserved:
+            return "reserved address"
+    return None
+
+
+def validate_provider_base_url(
+    url: str,
+    *,
+    allow_private: bool = False,
+    resolve: bool = True,
+) -> str:
+    """
+    Validate a provider base URL against the SSRF-safe target policy.
+
+    Rejected targets: non-http(s) schemes, missing hosts, embedded credentials,
+    fragments, out-of-range ports, ``localhost``-style names, and loopback /
+    link-local / private / unspecified / reserved / multicast IP literals.
+    With ``resolve=True`` the hostname is also resolved via DNS and every
+    resulting address must be public (defense against hostnames that point at
+    internal networks; rebinding-to-localhost is a known residual risk).
+
+    Returns the normalized URL (trailing slash stripped).
+
+    ``allow_private=True`` is the explicit development override: it skips the
+    host-range checks entirely (scheme/credential checks still apply).
+    """
+    raw = (url or "").strip()
+    if not raw:
+        raise UnsafeProviderUrlError("provider base URL is empty")
+    try:
+        parts = urlsplit(raw)
+        port = parts.port
+    except ValueError as exc:
+        raise UnsafeProviderUrlError(f"unparsable provider base URL ({exc})") from exc
+    scheme = (parts.scheme or "").lower()
+    if scheme not in _SAFE_URL_SCHEMES:
+        raise UnsafeProviderUrlError(
+            f"scheme '{scheme or '(missing)'}' is not allowed; use http or https"
+        )
+    host = (parts.hostname or "").strip().lower().rstrip(".")
+    if not host:
+        raise UnsafeProviderUrlError("provider base URL has no host")
+    if parts.username or parts.password:
+        raise UnsafeProviderUrlError("provider base URL must not embed credentials")
+    if parts.fragment:
+        raise UnsafeProviderUrlError("provider base URL must not contain a fragment")
+    if port is not None and not (1 <= port <= 65535):
+        raise UnsafeProviderUrlError("provider base URL port is out of range")
+
+    normalized = raw.rstrip("/")
+    if allow_private:
+        return normalized
+
+    if host in _LOCAL_HOSTNAMES or host.endswith(_LOCAL_HOST_SUFFIXES):
+        raise UnsafeProviderUrlError(
+            f"host '{host}' is a local hostname; private provider targets are disabled"
+        )
+    try:
+        literal: Any = ipaddress.ip_address(host)
+    except ValueError:
+        literal = None
+    if literal is not None:
+        reason = _unsafe_ip_reason(literal)
+        if reason:
+            raise UnsafeProviderUrlError(
+                f"provider base URL points at a {reason} ({host})"
+            )
+        return normalized
+
+    if not resolve:
+        return normalized
+    # DNS-aware check for hostnames (used by runtime wiring, e.g. panel PATCH).
+    lookup_port = port or (443 if scheme == "https" else 80)
+    try:
+        infos = socket.getaddrinfo(host, lookup_port, type=socket.SOCK_STREAM)
+    except OSError as exc:
+        raise UnsafeProviderUrlError(
+            f"provider host '{host}' could not be resolved ({exc.__class__.__name__})"
+        ) from exc
+    for info in infos:
+        sockaddr = info[4]
+        addr_text = str(sockaddr[0]).split("%", 1)[0]  # drop IPv6 zone index
+        try:
+            addr: Any = ipaddress.ip_address(addr_text)
+        except ValueError:
+            continue
+        reason = _unsafe_ip_reason(addr)
+        if reason:
+            raise UnsafeProviderUrlError(
+                f"provider host '{host}' resolves to a {reason} ({addr_text})"
+            )
+    return normalized
+
+
+def _is_development_env(env: str | None) -> bool:
+    return (env or "").strip().lower() in {"development", "dev", "test"}
+
+
+_DIAGNOSTICS_AUTH_MODES = frozenset({"auto", "admin", "public"})
 
 
 class Settings(BaseSettings):
@@ -17,6 +160,9 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,
+        # Allow constructing Settings(env=..., admin_token=...) by field name
+        # in addition to the LLM_ROUTER_* aliases (used heavily by tests).
+        populate_by_name=True,
     )
 
     host: str = Field(default="0.0.0.0", alias="LLM_ROUTER_HOST")
@@ -59,10 +205,81 @@ class Settings(BaseSettings):
         alias="QWEN_BASE_URL",
     )
 
+    # --- v0.3 production boundary hardening ---------------------------------
+    # Production admin-token quality floor (see app.auth for the full policy).
+    admin_token_min_length: int = Field(
+        default=24, ge=8, le=1024, alias="LLM_ROUTER_ADMIN_TOKEN_MIN_LENGTH"
+    )
+    # Request boundary limits (enforced by app.api.errors.RequestBoundaryMiddleware).
+    max_body_bytes: int = Field(
+        default=2 * 1024 * 1024, ge=1024, alias="LLM_ROUTER_MAX_BODY_BYTES"
+    )
+    max_messages: int = Field(default=512, ge=1, alias="LLM_ROUTER_MAX_MESSAGES")
+    max_tools: int = Field(default=64, ge=1, alias="LLM_ROUTER_MAX_TOOLS")
+    max_concurrent_chat_requests: int = Field(
+        default=64, ge=1, alias="LLM_ROUTER_MAX_CONCURRENT_CHAT_REQUESTS"
+    )
+    # Development-only override for the provider URL SSRF policy.
+    allow_private_provider_urls: bool = Field(
+        default=False, alias="LLM_ROUTER_ALLOW_PRIVATE_PROVIDER_URLS"
+    )
+    # Auth policy for /metrics + /health/providers: auto (admin outside
+    # development, open in development) | admin | public.
+    diagnostics_auth: str = Field(default="auto", alias="LLM_ROUTER_DIAGNOSTICS_AUTH")
+
     @field_validator("provider_order", mode="before")
     @classmethod
     def _strip_order(cls, v: Any) -> str:
         return str(v or "deepseek,openai,anthropic,qwen").strip()
+
+    @field_validator("diagnostics_auth", mode="before")
+    @classmethod
+    def _validate_diagnostics_auth(cls, v: Any) -> str:
+        mode = str(v or "auto").strip().lower()
+        if mode not in _DIAGNOSTICS_AUTH_MODES:
+            raise ValueError(
+                "LLM_ROUTER_DIAGNOSTICS_AUTH must be one of: "
+                + ", ".join(sorted(_DIAGNOSTICS_AUTH_MODES))
+            )
+        return mode
+
+    @model_validator(mode="after")
+    def _enforce_provider_url_policy(self) -> Settings:
+        """
+        Offline enforcement of the provider URL SSRF policy at configuration time.
+
+        DNS-resolving checks (a hostname that resolves into a private network)
+        run at runtime wiring (see validate_provider_base_url with resolve=True);
+        here we reject structurally unsafe URLs without touching the network.
+        """
+        if self.allow_private_provider_urls and not _is_development_env(self.env):
+            raise ValueError(
+                "LLM_ROUTER_ALLOW_PRIVATE_PROVIDER_URLS=true is a development-only "
+                "override and is refused when LLM_ROUTER_ENV=production"
+            )
+        for env_name, url in self.provider_base_urls().items():
+            if not (url or "").strip():
+                continue
+            try:
+                validate_provider_base_url(
+                    url,
+                    allow_private=self.allow_private_provider_urls,
+                    resolve=False,
+                )
+            except UnsafeProviderUrlError as exc:
+                raise ValueError(
+                    f"{env_name} rejected by the provider URL policy: {exc}"
+                ) from exc
+        return self
+
+    def provider_base_urls(self) -> dict[str, str]:
+        """The four upstream base URLs with their configuration names."""
+        return {
+            "OPENAI_BASE_URL": self.openai_base_url,
+            "ANTHROPIC_BASE_URL": self.anthropic_base_url,
+            "DEEPSEEK_BASE_URL": self.deepseek_base_url,
+            "QWEN_BASE_URL": self.qwen_base_url,
+        }
 
     def provider_order_list(self) -> list[str]:
         return [p.strip() for p in self.provider_order.split(",") if p.strip()]
