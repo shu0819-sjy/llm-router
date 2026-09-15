@@ -1,0 +1,26 @@
+# One-command:
+#   docker compose -f "llm-router\docker-compose.yml" up --build -d
+services:
+  llm-router:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: llm-router:0.1.0
+    container_name: llm-router
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      LLM_ROUTER_DB_PATH: /app/data/llm_router.db
+      LLM_ROUTER_HOST: 0.0.0.0
+      LLM_ROUTER_PORT: "8000"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
