@@ -25,15 +25,22 @@ Inspired by projects like one-api / new-api, rewritten around asyncio + `httpx.A
 ```bash
 git clone https://github.com/shu0819-sjy/llm-router.git
 cd llm-router
-cp .env.example .env
-# edit .env — set LLM_ROUTER_ADMIN_TOKEN and any upstream API keys
+cp .env.example .env   # then set LLM_ROUTER_ADMIN_TOKEN and upstream keys
 docker compose up --build -d
-curl http://127.0.0.1:8000/health
 ```
 
-Admin panel: http://127.0.0.1:8000/panel/
+When the container is up, check health and open the admin UI on the host:
 
-### Local development
+- Health: `GET /health` on port `8000`
+- Panel: `/panel/`
+
+Example:
+
+```bash
+curl http://localhost:8000/health
+```
+
+### Development
 
 ```bash
 python -m venv .venv
@@ -46,13 +53,13 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ### Example request
 
 ```bash
-curl http://127.0.0.1:8000/v1/chat/completions \
+curl http://localhost:8000/v1/chat/completions \
   -H "Authorization: Bearer sk-demo-key" \
   -H "Content-Type: application/json" \
   -d '{"model":"deepseek-chat","messages":[{"role":"user","content":"hi"}]}'
 ```
 
-Demo keys are defined by `LLM_ROUTER_API_KEYS` in `.env`. Keys created in the panel are stored as hashes in SQLite and survive restarts.
+Demo keys come from `LLM_ROUTER_API_KEYS` in `.env`. Keys created in the panel are stored as hashes in SQLite and survive restarts.
 
 ## Architecture
 
