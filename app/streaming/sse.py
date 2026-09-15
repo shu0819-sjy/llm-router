@@ -3,17 +3,24 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any, Callable, Literal
 
+from app.api.errors import sanitize_client_error_message
 from app.failover.circuit_breaker import CircuitBreakerRegistry
 from app.failover.orchestrator import FailoverExhausted
 from app.failover.retry import classify_upstream_error, is_retryable
 from app.models import ChatRequest
 from app.providers.base import Provider, ProviderError, UpstreamError, UpstreamTimeout
+
+logger = logging.getLogger("llm_router.streaming")
+
+# Public SSE stream_error text — never echo raw upstream exception strings.
+_PUBLIC_STREAM_ERROR = "Upstream stream error"
 
 SSE_CONTENT_TYPE = "text/event-stream"
 
@@ -23,8 +30,12 @@ _FAILOVER_TYPES = (UpstreamTimeout, UpstreamError, TimeoutError, ConnectionError
 # marks the row unavailable — it does not invent/estimate token counts.
 AccountingStatus = Literal["actual", "unavailable"]
 
+# Truthful stream lifecycle outcomes written to usage_events.status.
+StreamOutcome = Literal["ok", "partial", "upstream_error", "client_disconnected"]
+
 # A valid OpenAI-style SSE data line (not a comment / keepalive)
 _DATA_LINE_RE = re.compile(rb"(?m)^data:\s*\S")
+_DONE_RE = re.compile(rb"(?m)^data:\s*\[DONE\]\s*$")
 
 
 def is_valid_sse_data_chunk(chunk: bytes) -> bool:
@@ -32,6 +43,13 @@ def is_valid_sse_data_chunk(chunk: bytes) -> bool:
     if not chunk:
         return False
     return _DATA_LINE_RE.search(chunk) is not None
+
+
+def chunk_contains_done(chunk: bytes) -> bool:
+    """True when chunk contains an OpenAI-style `data: [DONE]` line."""
+    if not chunk or b"[DONE]" not in chunk:
+        return False
+    return _DONE_RE.search(chunk) is not None
 
 
 def parse_usage_from_sse_chunk(chunk: bytes) -> dict[str, int] | None:
@@ -72,6 +90,45 @@ class StreamUsage:
     completion_tokens: int = 0
     total_tokens: int = 0
     accounting_status: AccountingStatus = "unavailable"
+    # Lifecycle / latency accounting
+    saw_done: bool = False
+    saw_upstream_error: bool = False
+    client_disconnected: bool = False
+    ttfb_ms: float | None = None
+    duration_ms: float | None = None
+    _started_at: float | None = field(default=None, repr=False)
+
+    def mark_started(self, *, clock: Callable[[], float] | None = None) -> None:
+        if self._started_at is None:
+            self._started_at = (clock or time.perf_counter)()
+
+    def mark_first_byte(self, *, clock: Callable[[], float] | None = None) -> None:
+        if self.ttfb_ms is not None:
+            return
+        now = (clock or time.perf_counter)()
+        start = self._started_at if self._started_at is not None else now
+        self.ttfb_ms = max(0.0, (now - start) * 1000.0)
+
+    def mark_finished(self, *, clock: Callable[[], float] | None = None) -> None:
+        now = (clock or time.perf_counter)()
+        start = self._started_at if self._started_at is not None else now
+        self.duration_ms = max(0.0, (now - start) * 1000.0)
+
+    @property
+    def outcome(self) -> StreamOutcome:
+        """
+        Resolve usage-row status.
+
+        `ok` only when upstream emitted `[DONE]`. Otherwise distinguish
+        client disconnect, upstream mid-stream failure, and truncated streams.
+        """
+        if self.saw_done:
+            return "ok"
+        if self.client_disconnected:
+            return "client_disconnected"
+        if self.saw_upstream_error:
+            return "upstream_error"
+        return "partial"
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -79,6 +136,10 @@ class StreamUsage:
             "completion_tokens": self.completion_tokens,
             "total_tokens": self.total_tokens,
             "accounting_status": self.accounting_status,
+            "saw_done": self.saw_done,
+            "outcome": self.outcome,
+            "ttfb_ms": self.ttfb_ms,
+            "duration_ms": self.duration_ms,
         }
 
 
@@ -104,16 +165,25 @@ async def iter_openai_sse(chunks: AsyncIterator[bytes]) -> AsyncIterator[bytes]:
 async def iter_openai_sse_with_usage(
     chunks: AsyncIterator[bytes],
     usage: StreamUsage,
+    *,
+    clock: Callable[[], float] | None = None,
 ) -> AsyncIterator[bytes]:
     """
-    Passthrough SSE while scraping usage from payloads.
+    Passthrough SSE while scraping usage and stream lifecycle signals.
+
     Post-first-byte transport errors emit a single SSE error event and stop
-    (no provider hop / no duplicate upstream output).
+    (no provider hop / no duplicate upstream output). Updates ``usage`` with
+    TTFB, total duration, ``saw_done``, and ``saw_upstream_error``.
     """
+    clock = clock or time.perf_counter
+    usage.mark_started(clock=clock)
     try:
         async for chunk in chunks:
             if not chunk:
                 continue
+            usage.mark_first_byte(clock=clock)
+            if chunk_contains_done(chunk):
+                usage.saw_done = True
             scraped = parse_usage_from_sse_chunk(chunk)
             if scraped is not None:
                 usage.prompt_tokens = scraped["prompt_tokens"]
@@ -122,8 +192,14 @@ async def iter_openai_sse_with_usage(
                 usage.accounting_status = "actual"
             yield chunk
     except Exception as exc:  # noqa: BLE001 — terminate stream cleanly for client
-        yield sse_error_event(str(exc), code="stream_error")
+        usage.saw_upstream_error = True
+        usage.mark_first_byte(clock=clock)
+        # Full detail stays in server logs only; clients get a fixed public message.
+        logger.warning("upstream mid-stream error: %s", exc, exc_info=True)
+        yield sse_error_event(_PUBLIC_STREAM_ERROR, code="stream_error")
         return
+    finally:
+        usage.mark_finished(clock=clock)
 
     if usage.accounting_status != "actual":
         usage.accounting_status = "unavailable"
@@ -218,7 +294,7 @@ async def stream_chat_with_failover(
         except StopAsyncIteration:
             # Empty stream — treat as success with DONE only (committed; no failover)
             breaker.record_success()
-            usage = StreamUsage(accounting_status="unavailable")
+            usage = StreamUsage(accounting_status="unavailable", saw_done=True)
 
             async def _empty() -> AsyncIterator[bytes]:
                 yield b"data: [DONE]\n\n"
@@ -296,5 +372,7 @@ async def stream_chat_with_failover(
 
 
 def sse_error_event(message: str, *, code: str = "stream_error") -> bytes:
-    payload = {"error": {"message": message, "type": "api_error", "code": code}}
+    """Encode an SSE error event; message is sanitized before leaving the process."""
+    safe = sanitize_client_error_message(message)
+    payload = {"error": {"message": safe, "type": "api_error", "code": code}}
     return f"data: {json.dumps(payload)}\n\n".encode()

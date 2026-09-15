@@ -11,7 +11,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from app.db.cost import PriceQuote, estimate_cost
 
@@ -26,8 +26,12 @@ __all__ = [
     "InMemoryStorage",
     "PriceQuote",
     "PriceStore",
+    "StorageBackend",
+    "StorageBundle",
     "UsageStore",
 ]
+
+StorageBackend = Literal["sqlite", "memory"]
 
 
 @runtime_checkable
@@ -44,6 +48,8 @@ class ApiKeyStore(Protocol):
         rate_capacity: float | None = None,
         rate_refill_per_s: float | None = None,
         is_active: bool = True,
+        source: str = "panel",
+        update_active: bool = True,
     ) -> int: ...
 
     async def get_api_key_id_by_raw(self, raw_key: str) -> int | None: ...
@@ -84,9 +90,30 @@ class UsageStore(Protocol):
         status: str = "ok",
         request_id: str | None = None,
         accounting_status: str = "actual",
+        ttfb_ms: int | None = None,
     ) -> dict[str, Any]: ...
 
     async def recent(self, limit: int = 50) -> list[dict[str, Any]]: ...
+
+
+@dataclass(frozen=True)
+class StorageBundle:
+    """
+    Injectable storage ports consumed by routing / ledger / panel / health paths.
+
+    ``backend`` is only ``sqlite`` (default production) or ``memory`` (tests).
+    This package does **not** ship Redis or PostgreSQL adapters.
+    """
+
+    api_keys: ApiKeyStore
+    prices: PriceStore
+    usage: UsageStore
+    backend: StorageBackend = "sqlite"
+
+    @staticmethod
+    def from_memory(store: InMemoryStorage | None = None) -> StorageBundle:
+        mem = store or InMemoryStorage()
+        return StorageBundle(api_keys=mem, prices=mem, usage=mem, backend="memory")
 
 
 @dataclass
@@ -113,6 +140,8 @@ class InMemoryStorage:
         rate_capacity: float | None = None,
         rate_refill_per_s: float | None = None,
         is_active: bool = True,
+        source: str = "panel",
+        update_active: bool = True,
     ) -> int:
         existing = self._keys.get(raw_key)
         if existing:
@@ -123,9 +152,11 @@ class InMemoryStorage:
                     "model_allowlist": model_allowlist,
                     "rate_capacity": rate_capacity,
                     "rate_refill_per_s": rate_refill_per_s,
-                    "is_active": is_active,
+                    "source": source,
                 }
             )
+            if update_active:
+                existing["is_active"] = is_active
             return int(existing["id"])
         self._key_seq += 1
         self._keys[raw_key] = {
@@ -136,6 +167,7 @@ class InMemoryStorage:
             "rate_capacity": rate_capacity,
             "rate_refill_per_s": rate_refill_per_s,
             "is_active": is_active,
+            "source": source,
         }
         return self._key_seq
 
@@ -146,6 +178,7 @@ class InMemoryStorage:
         return int(row["id"])
 
     async def get_price(self, model: str, *, at: str | None = None) -> PriceQuote | None:
+        _ = at
         direct = self._prices.get(model)
         if direct:
             return direct
@@ -204,6 +237,7 @@ class InMemoryStorage:
         status: str = "ok",
         request_id: str | None = None,
         accounting_status: str = "actual",
+        ttfb_ms: int | None = None,
     ) -> dict[str, Any]:
         quote = await self.get_price(model)
         if quote:
@@ -237,6 +271,7 @@ class InMemoryStorage:
             "total_tokens": total,
             "cost_usd": float(cost),
             "latency_ms": int(latency_ms),
+            "ttfb_ms": int(ttfb_ms) if ttfb_ms is not None else None,
             "status": status,
             "request_id": rid,
             "accounting_status": accounting_status,

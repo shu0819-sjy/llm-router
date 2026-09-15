@@ -39,9 +39,7 @@ jobs:
       - name: Ruff lint
         run: ruff check app tests scripts
 
-      - name: Type check (informational)
-        # mypy is not a hard gate in v0.2.0; see CONTRIBUTING.md
-        continue-on-error: true
+      - name: Type check (hard gate)
         run: mypy app
 
       - name: Unit tests with coverage gate
@@ -50,15 +48,33 @@ jobs:
           # Never enable live upstream tests in default CI
           LLM_ROUTER_RUN_INTEGRATION: "0"
 
+      - name: Integration lane stays double-gated
+        # Selecting the marker explicitly must still skip every live case
+        # while the opt-in flag is unset.
+        run: python -m pytest -m integration -q
+        env:
+          LLM_ROUTER_RUN_INTEGRATION: "0"
+
   docker:
-    name: Docker build and health smoke
+    name: Docker build, health and restart/migration smoke
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
       - name: Build image
         run: docker build -t llm-router:ci .
+
+      - name: Restart and migration smoke (clean temporary volume)
+        # Boots the image on a v0.2.0-schema database (additive migration +
+        # row survival), then verifies panel keys and usage history survive
+        # `docker restart`. Packaged-defaults smoke, not a production claim.
+        run: python scripts/restart_migration_smoke.py --image llm-router:ci --port 18000
 
       - name: Run container and curl /health
         run: |

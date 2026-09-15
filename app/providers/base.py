@@ -33,6 +33,8 @@ class Provider(ABC):
     id: str
     supported_prefixes: list[str]
     enabled: bool = True
+    # Declared feature flags used by routing filters (e.g. tools / structured output).
+    capabilities: frozenset[str] = frozenset()
 
     @abstractmethod
     async def health(self) -> bool:
@@ -60,6 +62,13 @@ class Provider(ABC):
             if m.startswith(p):
                 return True
         return False
+
+    def supports_capabilities(self, required: frozenset[str] | set[str] | list[str]) -> bool:
+        """Return True when this provider declares every required capability."""
+        if not required:
+            return True
+        caps = self.capabilities or frozenset()
+        return set(required).issubset(caps)
 
     async def aclose(self) -> None:
         """Release HTTP resources if any."""

@@ -1,7 +1,13 @@
 # Pinned direct runtime dependencies for reproducible installs / Docker builds.
-# Refresh: bump pins deliberately, then `pip install -r requirements.txt`
-# and re-run the test + Docker verify commands. See CONTRIBUTING.md.
-
+#
+# Reproducibility policy (v0.3):
+# - Direct dependencies are exact-pinned (==) and only moved deliberately.
+# - The Docker base image is digest-pinned (see Dockerfile) and installs from
+#   this file, so image contents vary only with these pins and that digest.
+# - Transitive dependencies are not hash-locked; treat this as direct-pin
+#   level reproducibility, not bit-for-bit. Refresh procedure: bump the pin,
+#   `pip install -r requirements.txt`, then re-run the test suite, the Docker
+#   build, and scripts/restart_migration_smoke.py. See CONTRIBUTING.md.
 fastapi==0.133.1
 uvicorn[standard]==0.41.0
 httpx==0.28.1

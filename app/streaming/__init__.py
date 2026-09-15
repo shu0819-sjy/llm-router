@@ -2,8 +2,10 @@
 
 from app.streaming.sse import (
     SSE_CONTENT_TYPE,
+    StreamOutcome,
     StreamStart,
     StreamUsage,
+    chunk_contains_done,
     iter_openai_sse,
     iter_openai_sse_with_usage,
     stream_chat_with_failover,
@@ -11,8 +13,10 @@ from app.streaming.sse import (
 
 __all__ = [
     "SSE_CONTENT_TYPE",
+    "StreamOutcome",
     "StreamStart",
     "StreamUsage",
+    "chunk_contains_done",
     "iter_openai_sse",
     "iter_openai_sse_with_usage",
     "stream_chat_with_failover",

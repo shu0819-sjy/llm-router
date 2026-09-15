@@ -9,6 +9,8 @@ CREATE TABLE IF NOT EXISTS api_keys (
     rate_capacity REAL,
     rate_refill_per_s REAL,
     is_active INTEGER NOT NULL DEFAULT 1,
+    -- 'env' = managed via LLM_ROUTER_API_KEYS; 'panel' = created in admin panel
+    source TEXT NOT NULL DEFAULT 'panel',
     created_at TEXT NOT NULL
 );
 
@@ -31,6 +33,8 @@ CREATE TABLE IF NOT EXISTS usage_events (
     total_tokens INTEGER NOT NULL DEFAULT 0,
     cost_usd REAL NOT NULL DEFAULT 0,
     latency_ms INTEGER NOT NULL DEFAULT 0,
+    -- Time-to-first-byte for streaming requests (0 when not applicable / unknown)
+    ttfb_ms INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL,
     request_id TEXT,
     accounting_status TEXT NOT NULL DEFAULT 'actual',

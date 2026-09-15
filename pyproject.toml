@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "llm-router"
-version = "0.2.0"
-description = "OpenAI-compatible asyncio FastAPI LLM gateway with multi-provider failover"
+version = "0.3.0"
+description = "Asyncio FastAPI LLM gateway with OpenAI-compatible Chat Completions and Models APIs, multi-provider failover"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -76,10 +76,16 @@ ignore = [
 python_version = "3.11"
 ignore_missing_imports = true
 warn_unused_ignores = false
-check_untyped_defs = false
+check_untyped_defs = true
 pretty = true
 files = ["app"]
-# v0.2.0: CI runs mypy as an informational job (continue-on-error). These
-# disables reduce noise from legacy optional/assignment narrowing; tighten
-# per-module in a later release when mypy becomes a hard gate.
-disable_error_code = ["assignment", "arg-type", "return-value", "unused-ignore"]
+# v0.3: mypy is a hard CI gate (no continue-on-error) and untyped defs are
+# checked. The residual disables below are a documented, itemized set with a
+# known path to removal — clear them and delete the entry when fixed:
+#   assignment  — app/metrics/prometheus.py (float/int latency counter)
+#   arg-type    — app/routing/key_digest.py, app/db/database.py (int(x | None)
+#                 narrowing on id/lastrowid)
+#   return-value— app/db/database.py fetchall() Iterable vs list
+# Enabling warn_unused_ignores additionally requires dropping three stale
+# `# type: ignore[arg-type]` comments left over after the v0.3 fixes.
+disable_error_code = ["assignment", "arg-type", "return-value"]

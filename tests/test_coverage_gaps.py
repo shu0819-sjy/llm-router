@@ -96,12 +96,14 @@ def test_key_router_allowlist_and_forced_unavailable(test_settings: Settings) ->
     assert "unavailable" in bad.reason
     assert bad.candidates == []
 
-    # Exact allowlist match
+    # Exact allowlist match, but the only prefix-compatible provider is disabled
+    # → v0.3 model_not_supported (no unrelated-provider fallback).
     allow2 = router.authenticate("sk-allow")
     assert allow2 is not None
     exact = router.resolve(allow2, "deepseek-chat")
-    # deepseek disabled → may fall through provider_order without primary match enabled
-    assert exact.reason in ("model_prefix", "provider_order", "model_not_allowlisted") or exact.candidates
+    assert exact.reason == "model_not_supported"
+    assert exact.primary is None
+    assert exact.candidates == []
 
     star = router.authenticate("sk-star")
     assert star is not None
@@ -114,7 +116,8 @@ def test_key_router_allowlist_and_forced_unavailable(test_settings: Settings) ->
     assert router.authenticate("sk-dead") is None
 
 
-def test_key_router_unknown_model_falls_to_provider_order(test_settings: Settings) -> None:
+def test_key_router_unknown_model_not_supported(test_settings: Settings) -> None:
+    """v0.3 contract: an unknown model is no longer routed via provider order."""
     reg = ProviderRegistry(
         [
             FakeProvider("deepseek", ["deepseek-"]),
@@ -129,9 +132,9 @@ def test_key_router_unknown_model_falls_to_provider_order(test_settings: Setting
     rec = router.authenticate("sk-demo-key")
     assert rec is not None
     d = router.resolve(rec, "mystery-model-xyz")
-    assert d.reason == "provider_order"
-    assert d.primary is not None
-    assert d.candidates
+    assert d.reason == "model_not_supported"
+    assert d.primary is None
+    assert d.candidates == []
 
 
 def test_http_model_not_allowlisted_403(test_settings: Settings) -> None:
@@ -178,6 +181,29 @@ def test_http_no_providers_502(test_settings: Settings) -> None:
         body = r.json()
         err = body.get("error") or (body.get("detail") or {}).get("error") or {}
         assert err.get("code") == "no_providers"
+
+
+def test_http_model_not_supported_400(test_settings: Settings) -> None:
+    """v0.3 contract: unknown model → router-level 400, not a 502 upstream error."""
+    reg = ProviderRegistry([FakeProvider("openai", ["gpt-"])])
+    app = create_app(test_settings, registry=reg)
+    app.state.key_router = KeyRouter(
+        reg,
+        settings=test_settings,
+        keys=[ApiKeyRecord(name="demo", key="sk-demo")],
+    )
+    with TestClient(app) as client:
+        r = client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": "Bearer sk-demo"},
+            json={"model": "mystery-model-xyz", "messages": [{"role": "user", "content": "x"}]},
+        )
+        assert r.status_code == 400
+        body = r.json()
+        err = body.get("error") or (body.get("detail") or {}).get("error") or {}
+        assert err.get("code") == "model_not_supported"
+        assert err.get("type") == "invalid_request_error"
+        assert "no upstream request was made" in err.get("message", "")
 
 
 # ----- database -----
