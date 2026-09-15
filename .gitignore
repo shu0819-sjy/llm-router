@@ -20,3 +20,5 @@ data/*.db-*
 *.log
 .idea/
 .vscode/
+.gh-login.*
+*.pid
