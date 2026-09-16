@@ -127,6 +127,7 @@ class InMemoryStorage:
     _keys: dict[str, dict[str, Any]] = field(default_factory=dict)
     _key_seq: int = 0
     _prices: dict[str, PriceQuote] = field(default_factory=dict)
+    _price_history: dict[str, list[PriceQuote]] = field(default_factory=dict)
     _events: list[dict[str, Any]] = field(default_factory=list)
     _event_seq: int = 0
 
@@ -178,20 +179,33 @@ class InMemoryStorage:
         return int(row["id"])
 
     async def get_price(self, model: str, *, at: str | None = None) -> PriceQuote | None:
-        _ = at
-        direct = self._prices.get(model)
+        direct = self._price_at(model, at)
         if direct:
             return direct
         # longest-prefix fallback
         best: PriceQuote | None = None
         best_len = -1
         m = model.lower()
-        for key, quote in self._prices.items():
+        for key in self._prices:
+            quote = self._price_at(key, at)
+            if quote is None:
+                continue
             k = key.lower()
             if m.startswith(k) and len(k) > best_len:
                 best = quote
                 best_len = len(k)
         return best
+
+    def _price_at(self, model: str, at: str | None) -> PriceQuote | None:
+        """从内存历史中返回指定时刻生效的价格。"""
+        if at is None:
+            return self._prices.get(model)
+        candidates = [
+            quote
+            for quote in self._price_history.get(model, [])
+            if quote.effective_from <= at
+        ]
+        return max(candidates, key=lambda quote: quote.effective_from, default=None)
 
     async def set_price(
         self,
@@ -219,7 +233,10 @@ class InMemoryStorage:
             version=version,
             effective_from=effective_from or _utc_now_iso(),
         )
-        self._prices[model] = quote
+        self._price_history.setdefault(model, []).append(quote)
+        current = self._prices.get(model)
+        if current is None or quote.effective_from >= current.effective_from:
+            self._prices[model] = quote
         return quote
 
     async def list_model_ids(self) -> list[str]:

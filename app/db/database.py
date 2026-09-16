@@ -93,6 +93,31 @@ class Database:
         await self._conn.commit()
         await self._migrate_columns()
         await self.seed_prices()
+        await self._backfill_price_history()
+
+    async def _backfill_price_history(self) -> None:
+        """将旧库仅存的当前价格补为首个可查询历史版本。"""
+        rows = await self.fetchall(
+            """
+            SELECT model, input_per_1m_usd, output_per_1m_usd, version, effective_from
+            FROM model_prices
+            """
+        )
+        for row in rows:
+            await self.execute(
+                """
+                INSERT OR IGNORE INTO model_price_history(
+                    model, input_per_1m_usd, output_per_1m_usd, version, effective_from
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    str(row["model"]),
+                    float(row["input_per_1m_usd"]),
+                    float(row["output_per_1m_usd"]),
+                    str(row["version"] or "v1"),
+                    str(row["effective_from"] or "1970-01-01T00:00:00+00:00"),
+                ),
+            )
 
     async def _table_columns(self, table: str) -> set[str]:
         assert self._conn is not None
@@ -314,9 +339,44 @@ class Database:
             return None
         return quote.input_per_1m_usd, quote.output_per_1m_usd
 
+    @staticmethod
+    def _price_quote_from_row(row: aiosqlite.Row) -> PriceQuote:
+        """将价格查询行转换为稳定的价格快照对象。"""
+        return PriceQuote(
+            model=str(row["model"]),
+            input_per_1m_usd=float(row["input_per_1m_usd"]),
+            output_per_1m_usd=float(row["output_per_1m_usd"]),
+            version=str(row["version"] or "v1"),
+            effective_from=str(row["effective_from"] or "1970-01-01T00:00:00+00:00"),
+        )
+
     async def get_price(self, model: str, *, at: str | None = None) -> PriceQuote | None:
-        """Return the current price quote (at is reserved for future history lookups)."""
-        _ = at  # extension point for effective-at queries
+        """返回当前价格，或返回 ``at`` 时刻已生效的历史价格。"""
+        if at is not None:
+            row = await self.fetchone(
+                """
+                SELECT model, input_per_1m_usd, output_per_1m_usd, version, effective_from
+                FROM model_price_history
+                WHERE model = ? AND effective_from <= ?
+                ORDER BY effective_from DESC, id DESC
+                LIMIT 1
+                """,
+                (model, at),
+            )
+            if row:
+                return self._price_quote_from_row(row)
+
+            rows = await self.fetchall(
+                """
+                SELECT model, input_per_1m_usd, output_per_1m_usd, version, effective_from
+                FROM model_price_history
+                WHERE effective_from <= ?
+                ORDER BY effective_from DESC, id DESC
+                """,
+                (at,),
+            )
+            return self._best_prefix_price(model, rows)
+
         row = await self.fetchone(
             """
             SELECT model, input_per_1m_usd, output_per_1m_usd, version, effective_from
@@ -331,28 +391,23 @@ class Database:
                 FROM model_prices
                 """
             )
-            best: PriceQuote | None = None
-            best_len = -1
-            m = model.lower()
-            for r in rows:
-                key = str(r["model"]).lower()
-                if m.startswith(key) and len(key) > best_len:
-                    best = PriceQuote(
-                        model=str(r["model"]),
-                        input_per_1m_usd=float(r["input_per_1m_usd"]),
-                        output_per_1m_usd=float(r["output_per_1m_usd"]),
-                        version=str(r["version"] or "v1"),
-                        effective_from=str(r["effective_from"] or "1970-01-01T00:00:00+00:00"),
-                    )
-                    best_len = len(key)
-            return best
-        return PriceQuote(
-            model=str(row["model"]),
-            input_per_1m_usd=float(row["input_per_1m_usd"]),
-            output_per_1m_usd=float(row["output_per_1m_usd"]),
-            version=str(row["version"] or "v1"),
-            effective_from=str(row["effective_from"] or "1970-01-01T00:00:00+00:00"),
-        )
+            return self._best_prefix_price(model, rows)
+        return self._price_quote_from_row(row)
+
+    @classmethod
+    def _best_prefix_price(
+        cls, model: str, rows: list[aiosqlite.Row]
+    ) -> PriceQuote | None:
+        """按最长模型前缀选择价格；同一前缀的查询结果已按最新生效时间排序。"""
+        best: PriceQuote | None = None
+        best_len = -1
+        lowered_model = model.lower()
+        for row in rows:
+            key = str(row["model"]).lower()
+            if lowered_model.startswith(key) and len(key) > best_len:
+                best = cls._price_quote_from_row(row)
+                best_len = len(key)
+        return best
 
     async def set_price(
         self,
@@ -374,25 +429,47 @@ class Database:
             else:
                 version = "v1"
         eff = effective_from or utc_now_iso()
-        await self.execute(
-            """
-            INSERT INTO model_prices(model, input_per_1m_usd, output_per_1m_usd, version, effective_from)
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(model) DO UPDATE SET
-                input_per_1m_usd = excluded.input_per_1m_usd,
-                output_per_1m_usd = excluded.output_per_1m_usd,
-                version = excluded.version,
-                effective_from = excluded.effective_from
-            """,
-            (model, float(input_per_1m_usd), float(output_per_1m_usd), version, eff),
-        )
-        return PriceQuote(
+        quote = PriceQuote(
             model=model,
             input_per_1m_usd=float(input_per_1m_usd),
             output_per_1m_usd=float(output_per_1m_usd),
             version=version,
             effective_from=eff,
         )
+        await self.execute(
+            """
+            INSERT INTO model_price_history(
+                model, input_per_1m_usd, output_per_1m_usd, version, effective_from
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                quote.model,
+                quote.input_per_1m_usd,
+                quote.output_per_1m_usd,
+                quote.version,
+                quote.effective_from,
+            ),
+        )
+        if existing is None or quote.effective_from >= existing.effective_from:
+            await self.execute(
+                """
+                INSERT INTO model_prices(model, input_per_1m_usd, output_per_1m_usd, version, effective_from)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(model) DO UPDATE SET
+                    input_per_1m_usd = excluded.input_per_1m_usd,
+                    output_per_1m_usd = excluded.output_per_1m_usd,
+                    version = excluded.version,
+                    effective_from = excluded.effective_from
+                """,
+                (
+                    quote.model,
+                    quote.input_per_1m_usd,
+                    quote.output_per_1m_usd,
+                    quote.version,
+                    quote.effective_from,
+                ),
+            )
+        return quote
 
     async def list_model_ids(self) -> list[str]:
         rows = await self.fetchall("SELECT model FROM model_prices ORDER BY model")

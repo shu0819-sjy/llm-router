@@ -110,6 +110,36 @@ async def test_price_change_does_not_rewrite_prior_costs(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_price_history_returns_quote_effective_at_requested_time(tmp_path) -> None:
+    db = Database(str(tmp_path / "price_history.db"))
+    await db.connect()
+
+    await db.set_price(
+        "history-model",
+        1.0,
+        2.0,
+        version="v1",
+        effective_from="2026-01-01T00:00:00+00:00",
+    )
+    await db.set_price(
+        "history-model",
+        3.0,
+        4.0,
+        version="v2",
+        effective_from="2026-06-01T00:00:00+00:00",
+    )
+
+    earlier = await db.get_price("history-model", at="2026-03-01T00:00:00+00:00")
+    later = await db.get_price("history-model", at="2026-09-01T00:00:00+00:00")
+    assert earlier is not None and earlier.version == "v1"
+    assert earlier.input_per_1m_usd == 1.0
+    assert later is not None and later.version == "v2"
+    assert later.input_per_1m_usd == 3.0
+
+    await db.close()
+
+
+@pytest.mark.asyncio
 async def test_unavailable_accounting_zero_tokens_and_cost(tmp_path) -> None:
     db = Database(str(tmp_path / "unavail.db"))
     await db.connect()

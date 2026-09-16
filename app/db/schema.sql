@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS usage_events (
     FOREIGN KEY (api_key_id) REFERENCES api_keys(id)
 );
 
--- Current price per model (versioned). Historical costs rely on snapshots on usage_events.
+-- 当前价格缓存；历史价格保存在 model_price_history。
 CREATE TABLE IF NOT EXISTS model_prices (
     model TEXT PRIMARY KEY,
     input_per_1m_usd REAL NOT NULL DEFAULT 0,
@@ -54,6 +54,19 @@ CREATE TABLE IF NOT EXISTS model_prices (
     effective_from TEXT NOT NULL DEFAULT '1970-01-01T00:00:00+00:00'
 );
 
+-- 每次调价都追加一行，支持按请求发生时间复核计费。
+CREATE TABLE IF NOT EXISTS model_price_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    model TEXT NOT NULL,
+    input_per_1m_usd REAL NOT NULL DEFAULT 0,
+    output_per_1m_usd REAL NOT NULL DEFAULT 0,
+    version TEXT NOT NULL,
+    effective_from TEXT NOT NULL,
+    UNIQUE(model, version, effective_from)
+);
+
 CREATE INDEX IF NOT EXISTS idx_usage_created ON usage_events(created_at);
 CREATE INDEX IF NOT EXISTS idx_usage_key ON usage_events(api_key_id);
 CREATE INDEX IF NOT EXISTS idx_keys_hash ON api_keys(key_hash);
+CREATE INDEX IF NOT EXISTS idx_price_history_model_time
+    ON model_price_history(model, effective_from DESC);
