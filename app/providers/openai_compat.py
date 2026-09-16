@@ -37,7 +37,8 @@ class OpenAICompatProvider(Provider):
         self._owns_client = client is None
         # trust_env=False: ignore broken HTTP(S)_PROXY from the host shell
         self._client = client or httpx.AsyncClient(
-            timeout=httpx.Timeout(60.0),
+            timeout=httpx.Timeout(connect=5.0, read=60.0, write=10.0, pool=5.0),
+            limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
             trust_env=False,
         )
 

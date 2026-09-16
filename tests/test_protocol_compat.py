@@ -84,6 +84,28 @@ def test_v1_models_requires_auth(test_settings) -> None:
         assert "detail" not in body  # OpenAI envelope, not FastAPI-wrapped
 
 
+def test_v1_models_respects_forced_provider(test_settings) -> None:
+    deepseek = FakeProvider("deepseek", ["deepseek-"])
+    openai = FakeProvider("openai", ["gpt-"])
+    reg = ProviderRegistry([deepseek, openai])
+    app = create_app(test_settings, registry=reg)
+    app.state.key_router = KeyRouter(
+        reg,
+        settings=test_settings,
+        keys=[ApiKeyRecord(name="forced", key="sk-forced", provider_id="deepseek")],
+    )
+
+    with TestClient(app) as client:
+        resp = client.get(
+            "/v1/models",
+            headers={"Authorization": "Bearer sk-forced"},
+        )
+        assert resp.status_code == 200
+        model_ids = {item["id"] for item in resp.json()["data"]}
+        assert model_ids
+        assert all(model_id.startswith("deepseek-") for model_id in model_ids)
+
+
 def test_validation_error_openai_envelope(test_settings) -> None:
     from app.api.errors import install_openai_exception_handlers
 

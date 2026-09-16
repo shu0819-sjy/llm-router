@@ -35,12 +35,8 @@ _SQLITE_BUSY_TIMEOUT_MS = 5000
 
 
 async def _sync_env_keys(db: Database, settings: Settings) -> None:
-    for item in settings.parsed_api_keys():
-        await db.upsert_api_key(
-            raw_key=str(item["key"]),
-            name=str(item["name"]),
-            provider_id=item.get("provider_id"),  # type: ignore[arg-type]
-        )
+    """同步环境密钥，并撤销已从环境变量移除的环境托管密钥。"""
+    await db.sync_environment_keys(settings.parsed_api_keys())
 
 
 async def _ensure_sqlite_reliability(database: Database) -> None:

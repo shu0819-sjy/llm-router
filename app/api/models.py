@@ -36,7 +36,10 @@ def _owned_by(model_id: str) -> str:
     return "llm-router"
 
 
-async def list_model_ids(request: Request) -> list[str]:
+async def list_model_ids(
+    request: Request,
+    api_key: ApiKeyRecord | None = None,
+) -> list[str]:
     """Prefer priced models from storage; fall back to the static chat catalog."""
     db = getattr(request.app.state, "db", None)
     ids: list[str] = []
@@ -56,7 +59,13 @@ async def list_model_ids(request: Request) -> list[str]:
                 ids = []
     if not ids:
         ids = list(_FALLBACK_MODELS)
-    return ids
+    # Models are an authorization-aware view, not a static price catalog.
+    # Filter through the same router used by chat requests so callers do not
+    # receive models that their key or current provider registry cannot serve.
+    router = getattr(request.app.state, "key_router", None)
+    if router is None or api_key is None:
+        return ids
+    return [mid for mid in ids if router.resolve(api_key, mid).candidates]
 
 
 async def list_models(
@@ -64,7 +73,7 @@ async def list_models(
     _api_key: ApiKeyRecord = Depends(require_api_key),
 ) -> dict[str, Any]:
     """OpenAI-shaped model list. Mounted on the /v1 chat router."""
-    ids = await list_model_ids(request)
+    ids = await list_model_ids(request, _api_key)
     data = [
         ModelCard(id=mid, created=0, owned_by=_owned_by(mid)).model_dump()
         for mid in ids
