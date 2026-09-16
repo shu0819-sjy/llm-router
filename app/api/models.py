@@ -36,6 +36,33 @@ def _owned_by(model_id: str) -> str:
     return "llm-router"
 
 
+def _model_visible_to_key(router: Any, api_key: ApiKeyRecord, model: str) -> bool:
+    """
+    Authorization-aware catalog visibility.
+
+    Unlike chat routing, listing does not require the provider to be currently
+    enabled (upstream API key present). Fresh installs can still see catalog
+    models while forced-provider / allowlist constraints still hide the rest.
+    """
+    decision = router.resolve(api_key, model)
+    if decision.reason == "model_not_allowlisted":
+        return False
+    if decision.reason == "forced_provider_model_mismatch":
+        return False
+    if decision.reason.startswith("forced provider") and "unavailable" in decision.reason:
+        return False
+    if decision.candidates:
+        return True
+
+    registry = getattr(router, "registry", None)
+    if registry is None:
+        return False
+    if api_key.provider_id:
+        forced = registry.get(api_key.provider_id)
+        return forced is not None and forced.supports_model(model)
+    return any(p.supports_model(model) for p in registry.all())
+
+
 async def list_model_ids(
     request: Request,
     api_key: ApiKeyRecord | None = None,
@@ -59,13 +86,10 @@ async def list_model_ids(
                 ids = []
     if not ids:
         ids = list(_FALLBACK_MODELS)
-    # Models are an authorization-aware view, not a static price catalog.
-    # Filter through the same router used by chat requests so callers do not
-    # receive models that their key or current provider registry cannot serve.
     router = getattr(request.app.state, "key_router", None)
     if router is None or api_key is None:
         return ids
-    return [mid for mid in ids if router.resolve(api_key, mid).candidates]
+    return [mid for mid in ids if _model_visible_to_key(router, api_key, mid)]
 
 
 async def list_models(
@@ -81,5 +105,4 @@ async def list_models(
     return {"object": "list", "data": data}
 
 
-# Re-export for OpenAPI typing convenience
 __all__ = ["list_models", "list_model_ids", "ModelListResponse", "_FALLBACK_MODELS"]

@@ -436,9 +436,11 @@ class Database:
             version=version,
             effective_from=eff,
         )
+        # Idempotent when seed/backfill already wrote the same (model, version, at)
+        # second — utc_now_iso() drops microseconds so same-second retries collide.
         await self.execute(
             """
-            INSERT INTO model_price_history(
+            INSERT OR IGNORE INTO model_price_history(
                 model, input_per_1m_usd, output_per_1m_usd, version, effective_from
             ) VALUES (?, ?, ?, ?, ?)
             """,
@@ -446,6 +448,20 @@ class Database:
                 quote.model,
                 quote.input_per_1m_usd,
                 quote.output_per_1m_usd,
+                quote.version,
+                quote.effective_from,
+            ),
+        )
+        await self.execute(
+            """
+            UPDATE model_price_history
+            SET input_per_1m_usd = ?, output_per_1m_usd = ?
+            WHERE model = ? AND version = ? AND effective_from = ?
+            """,
+            (
+                quote.input_per_1m_usd,
+                quote.output_per_1m_usd,
+                quote.model,
                 quote.version,
                 quote.effective_from,
             ),

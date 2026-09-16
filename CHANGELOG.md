@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.3.1] — 2026-09-16
+
+Industrial single-node follow-up on the 0.3.x line. First-/second-generation release artifacts are retired from the public product surface.
+
+### Fixed
+
+- `/v1/models` authorization-aware listing aligned with migration smoke (seed model must be provider-prefix compatible)
+- CI job/step timeouts so hung unit suites cannot run for hours
+
+### Changed
+
+- Default upstream timeout / failover budget: `30000` / `60000` ms (was `500` / `500`)
+- Panel UI version badge → v0.3.1; SECURITY supported line → 0.3.x only
+- Docs: single-node operations guide; gen1/gen2 release notes and v0.2 publish checklist removed from the active tree
+- `providers.weight` / `api_key_enc` documented as reserved/unused this release
+
+### Added
+
+- Queryable model price history (from tip): `model_price_history` + point-in-time `get_price(at=...)`
+- httpx connect/read/write/pool limits on Claude and OpenAI-compatible providers
+
 ## [0.3.0] — 2026-09-16
 
 Hardening release on top of v0.2.0. Public API surface unchanged: OpenAI compatibility remains Chat Completions (JSON + SSE) and the Models list only.

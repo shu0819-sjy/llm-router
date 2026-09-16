@@ -174,8 +174,10 @@ class Settings(BaseSettings):
     # Optional HMAC secret for rate-limit bucket identities (falls back to admin token)
     rate_limit_secret: str = Field(default="", alias="LLM_ROUTER_RATE_LIMIT_SECRET")
 
-    default_timeout_ms: int = Field(default=500, alias="LLM_ROUTER_DEFAULT_TIMEOUT_MS")
-    failover_budget_ms: int = Field(default=500, alias="LLM_ROUTER_FAILOVER_BUDGET_MS")
+    # Industrial single-node defaults: real LLM calls need tens of seconds.
+    # Override downward only for synthetic failover micro-benchmarks.
+    default_timeout_ms: int = Field(default=30000, alias="LLM_ROUTER_DEFAULT_TIMEOUT_MS")
+    failover_budget_ms: int = Field(default=60000, alias="LLM_ROUTER_FAILOVER_BUDGET_MS")
     cb_failure_threshold: int = Field(default=3, alias="LLM_ROUTER_CB_FAILURE_THRESHOLD")
     cb_recovery_timeout_s: float = Field(default=30.0, alias="LLM_ROUTER_CB_RECOVERY_TIMEOUT_S")
     cb_half_open_max: int = Field(default=1, alias="LLM_ROUTER_CB_HALF_OPEN_MAX")
