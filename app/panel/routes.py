@@ -241,12 +241,14 @@ async def patch_provider(
                 },
             ) from exc
         provider.base_url = safe_url
-    # Persist lightweight row (no secrets)
+    # Persist lightweight row (no secrets). `weight` is reserved/unused this
+    # release — failover order is LLM_ROUTER_PROVIDER_ORDER — so we let the
+    # schema DEFAULT (100) stand instead of writing a dead field.
     db = request.app.state.db
     await db.execute(
         """
-        INSERT INTO providers(id, base_url, api_key_enc, enabled, weight, updated_at)
-        VALUES (?, ?, NULL, ?, 100, ?)
+        INSERT INTO providers(id, base_url, api_key_enc, enabled, updated_at)
+        VALUES (?, ?, NULL, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             base_url = excluded.base_url,
             enabled = excluded.enabled,

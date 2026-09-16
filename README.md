@@ -143,8 +143,8 @@ See [`.env.example`](./.env.example). Common settings:
 | `LLM_ROUTER_MAX_CONCURRENT_CHAT_REQUESTS` | `64` | In-flight `/v1/chat/*` cap (429). |
 | `LLM_ROUTER_DIAGNOSTICS_AUTH` | `auto` | Auth for `/health/providers` + `/metrics`: `auto` (admin outside development), `admin`, or `public`. |
 | `LLM_ROUTER_ALLOW_PRIVATE_PROVIDER_URLS` | `false` | Dev-only SSRF override for loopback/private provider base URLs. |
-| `LLM_ROUTER_DEFAULT_TIMEOUT_MS` | `500` | Per-attempt upstream timeout |
-| `LLM_ROUTER_FAILOVER_BUDGET_MS` | `500` | Total failover budget |
+| `LLM_ROUTER_DEFAULT_TIMEOUT_MS` | `30000` | Per-attempt upstream timeout (ms); sized for real LLM calls |
+| `LLM_ROUTER_FAILOVER_BUDGET_MS` | `60000` | Total failover budget (ms) across candidates |
 | `LLM_ROUTER_CB_FAILURE_THRESHOLD` | `3` | Failures before opening a circuit |
 | `LLM_ROUTER_CB_RECOVERY_TIMEOUT_S` | `30` | Open → half-open wait |
 | `LLM_ROUTER_RATE_CAPACITY` | `60` | Token-bucket capacity |
@@ -220,19 +220,24 @@ docker-compose.yml
 .env.example
 ```
 
+## Single-node operations
+
+See [docs/OPERATIONS.md](./docs/OPERATIONS.md) for production single-node guidance (admin token, SQLite volume, health probes, restart policy, Prometheus). **Do not** run multiple replicas against one SQLite file expecting shared rate-limit or circuit state.
+
 ## Limitations
 
 - **OpenAI compatibility is limited to Chat Completions (JSON + SSE) and the Models list** — see [Compatibility scope](#compatibility-scope); no other OpenAI endpoints are implemented
 - Rate limiter and circuit breakers are in-memory (not shared across replicas)
 - SQLite is a single-node store; WAL is enabled but there is no multi-replica coordination
+- `providers.weight` / `api_key_enc` columns are **reserved / unused** in this release — failover order is `LLM_ROUTER_PROVIDER_ORDER` among prefix-compatible providers; upstream secrets come from environment variables
+- Anthropic-routed `tools` / `tool_choice` / `response_format` remain unsupported (explicit `400`); OpenAI-compatible upstreams forward these fields as-is
 - No billing product / multi-tenant RBAC beyond API keys
 - Streaming usage: when the upstream SSE includes a usage-bearing chunk, tokens are recorded as `accounting_status=actual`. If usage cannot be observed, the ledger row is marked `accounting_status=unavailable` and cost is not invented (no synthetic token counts).
 - No production-scale validation has been performed; Docker/CI smokes cover packaged defaults only
 
 ## Release notes
 
-- Current line: [RELEASE_NOTES_v0.3.md](./RELEASE_NOTES_v0.3.md) (v0.3.0 hardening)
-- Prior line: [RELEASE_NOTES_v0.2.md](./RELEASE_NOTES_v0.2.md)
+- Current line: [RELEASE_NOTES_v0.3.md](./RELEASE_NOTES_v0.3.md) (0.3.x industrial single-node)
 
 ## Contributing / Security
 

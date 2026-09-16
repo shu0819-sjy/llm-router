@@ -45,7 +45,10 @@ CONTAINER_USER = "root"
 
 SEED_KEY_RAW = "sk-smoke-seed-key"
 ENV_KEY_RAW = "sk-smoke-env-key"
-SEED_MODEL = "smoke-legacy-model"
+# Must be prefix-compatible with a built-in provider so auth-aware /v1/models
+# (tip 6297e96+) still lists it after migration. Price-row survival is the goal;
+# an unroutable id would correctly disappear from the models list.
+SEED_MODEL = "deepseek-chat"
 SEED_USAGE_REQUEST_ID = "smoke-seed-usage-req"
 DB_PATH_IN_CONTAINER = "/app/data/llm_router.db"
 
@@ -305,6 +308,10 @@ def main() -> int:
             f"LLM_ROUTER_ADMIN_TOKEN={admin_token}",
             "-e",
             f"LLM_ROUTER_API_KEYS=smoke:{ENV_KEY_RAW}",
+            # Enable a prefix-compatible provider so auth-aware /v1/models can
+            # list the seeded deepseek-chat price row even before real traffic.
+            "-e",
+            "DEEPSEEK_API_KEY=sk-smoke-upstream-not-used",
             "-e",
             "LLM_ROUTER_DB_PATH=/app/data/llm_router.db",
             "-v",
