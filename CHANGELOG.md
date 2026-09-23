@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.3.2] — 2026-09-24
+
+Tool-call fallback: capability-aware routing for requests carrying `tools` / `tool_choice` / `response_format`.
+
+### Added
+
+- Tool-call fallback: chat requests carrying `tools` / `tool_choice` / `response_format` resolve only providers that declare the matching capabilities; failover continues between tool-capable candidates within the same timeout budget
+- Structured `400` (`unsupported_parameter`) that names the unsupported fields when no tool-capable provider serves the model (auto-routed or key-forced) — replaces the Anthropic-only rejection path
+
+### Changed
+
+- `KeyRouter.resolve` is now called from `/v1/chat/completions` with `require_capabilities` derived from the request body (the routing-level capability filter existed since 0.3.0 but was not wired for tool fields)
+- Anthropic-routed requests carrying tool fields now fail over to a tool-capable provider instead of reaching Anthropic (the adapter still does not map these fields)
+
+### Fixed
+
+- Routing candidates for tool requests can no longer include providers that cannot serve them (previously guarded by a provider-id allowlist in the chat handler)
+
 ## [0.3.1] — 2026-09-16
 
 Industrial single-node follow-up on the 0.3.x line. First-/second-generation release artifacts are retired from the public product surface.

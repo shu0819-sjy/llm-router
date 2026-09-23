@@ -189,7 +189,11 @@ def test_tools_round_trip_openai_compat(test_settings) -> None:
 
 
 def test_tools_rejected_for_anthropic_only(test_settings) -> None:
+    """Claude models are only served by the Anthropic adapter, which does not
+    declare tool capabilities — the gateway fails fast with a structured 400
+    that names the unsupported fields instead of dispatching upstream."""
     provider = CapturingProvider("anthropic", ["claude-"])
+    provider.capabilities = frozenset()
     app = _app_with(provider, test_settings)
     with TestClient(app) as client:
         resp = client.post(

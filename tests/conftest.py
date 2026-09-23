@@ -38,7 +38,14 @@ class FakeClock:
 
 
 class FakeProvider(Provider):
-    """In-memory provider for routing / failover unit tests."""
+    """In-memory provider for routing / failover unit tests.
+
+    Defaults to the capability set of an OpenAI-compatible upstream (tools /
+    tool_choice / structured output); tests override ``capabilities`` to model
+    restricted providers.
+    """
+
+    capabilities = frozenset({"tools", "tool_choice", "structured_output"})
 
     def __init__(
         self,

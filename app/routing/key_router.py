@@ -289,7 +289,7 @@ class KeyRouter:
                     api_key=api_key,
                     primary=None,
                     candidates=[],
-                    reason="forced_provider_model_mismatch",
+                    reason="forced_provider_capability_mismatch",
                 )
             return RouteDecision(
                 api_key=api_key,

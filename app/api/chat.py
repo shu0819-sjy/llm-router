@@ -21,6 +21,7 @@ from app.metrics.request_id import REQUEST_ID_HEADER, request_id_from_request
 from app.models import ApiKeyRecord, ChatRequest, ModelListResponse
 from app.ratelimit.token_bucket import RateLimitExceeded
 from app.routing.key_digest import rate_limit_key_id
+from app.routing.key_router import RouteDecision, capabilities_for_tools_request
 from app.streaming.sse import (
     SSE_CONTENT_TYPE,
     iter_openai_sse_with_usage,
@@ -69,8 +70,59 @@ router.add_api_route(
     tags=["models"],
 )
 
-# Providers that forward OpenAI tool / response_format fields via model_dump.
-_OPENAI_COMPAT_TOOL_PROVIDERS = frozenset({"openai", "deepseek", "qwen", "gpt"})
+def _unsupported_tool_fields(body: ChatRequest) -> list[str]:
+    """Tool/structured-output fields present on the request."""
+    unsupported: list[str] = []
+    if body.tools:
+        unsupported.append("tools")
+    if body.tool_choice is not None:
+        unsupported.append("tool_choice")
+    if body.response_format is not None:
+        unsupported.append("response_format")
+    return unsupported
+
+
+def _reject_unsupported_tools(
+    body: ChatRequest, decision: RouteDecision
+) -> JSONResponse | None:
+    """
+    Tool-call fallback contract:
+
+    Requests carrying `tools` / `tool_choice` / `response_format` are routed
+    only to providers that declare the matching capabilities (the capability
+    filter is applied in `KeyRouter.resolve`), so failover continues between
+    tool-capable candidates within the same timeout budget. When no
+    tool-capable provider serves the model — auto-routed or key-forced — the
+    gateway returns a structured error that names the unsupported fields
+    instead of silently dropping them.
+    """
+    if not body.has_tools_or_format():
+        return None
+    if decision.candidates:
+        # Every remaining candidate declares the required capabilities.
+        return None
+    if decision.reason in (
+        "model_not_supported",
+        "forced_provider_model_mismatch",
+        "forced_provider_capability_mismatch",
+    ):
+        unsupported = _unsupported_tool_fields(body)
+        if not unsupported:
+            return None
+        return openai_error_response(
+            400,
+            (
+                "Fields "
+                + ", ".join(unsupported)
+                + " require a provider that supports tool calling; no enabled "
+                "provider serves model "
+                f"'{body.model}' with those capabilities."
+            ),
+            type="invalid_request_error",
+            code="unsupported_parameter",
+            param=unsupported[0],
+        )
+    return None
 
 
 def _rate_limit_secret(request: Request) -> str:
@@ -117,41 +169,6 @@ def _rate_limit_or_raise(request: Request, api_key: ApiKeyRecord) -> dict[str, s
                 "X-RateLimit-Remaining": str(int(exc.remaining)),
             },
         ) from exc
-
-
-def _reject_unsupported_tools(body: ChatRequest, provider_ids: list[str]) -> JSONResponse | None:
-    """
-    tools / tool_choice / response_format round-trip on OpenAI-compatible upstreams.
-    Anthropic adapter does not yet map these — reject explicitly with 400.
-    """
-    if not body.has_tools_or_format():
-        return None
-    if any(
-        pid in _OPENAI_COMPAT_TOOL_PROVIDERS or pid.startswith("openai")
-        for pid in provider_ids
-    ):
-        return None
-    if all(pid == "anthropic" for pid in provider_ids):
-        unsupported = []
-        if body.tools:
-            unsupported.append("tools")
-        if body.tool_choice is not None:
-            unsupported.append("tool_choice")
-        if body.response_format is not None:
-            unsupported.append("response_format")
-        return openai_error_response(
-            400,
-            (
-                "Fields "
-                + ", ".join(unsupported)
-                + " are not supported for Anthropic-routed requests in this release; "
-                "use an OpenAI-compatible model/provider."
-            ),
-            type="invalid_request_error",
-            code="unsupported_parameter",
-            param=unsupported[0] if unsupported else None,
-        )
-    return None
 
 
 def _usage_store(request: Request) -> Any:
@@ -243,7 +260,12 @@ async def chat_completions(
     rate_headers = _rate_limit_or_raise(request, api_key)
     rate_headers[REQUEST_ID_HEADER] = request_id
 
-    decision = key_router.resolve(api_key, body.model)
+    needed = capabilities_for_tools_request(
+        has_tools=bool(body.tools),
+        has_tool_choice=body.tool_choice is not None,
+        has_response_format=body.response_format is not None,
+    )
+    decision = key_router.resolve(api_key, body.model, require_capabilities=needed)
     if decision.reason == "model_not_allowlisted":
         raise HTTPException(
             status_code=403,
@@ -255,6 +277,13 @@ async def chat_completions(
                 }
             },
         )
+    # Tool-call fallback: when no tool-capable provider serves the model
+    # (auto-routed or key-forced), fail fast with a structured error that
+    # names the unsupported fields instead of a generic mismatch message.
+    tool_rejected = _reject_unsupported_tools(body, decision)
+    if tool_rejected is not None:
+        return tool_rejected
+
     if decision.reason == "forced_provider_model_mismatch":
         forced = api_key.provider_id or "unknown"
         return openai_error_response(
@@ -291,10 +320,6 @@ async def chat_completions(
                 }
             },
         )
-
-    rejected = _reject_unsupported_tools(body, [p.id for p in decision.candidates])
-    if rejected is not None:
-        return rejected
 
     if body.stream:
         try:

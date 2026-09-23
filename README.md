@@ -14,6 +14,7 @@ Inspired by projects like one-api / new-api, rewritten around asyncio + `httpx.A
 - Multi-provider adapters: OpenAI, Anthropic (Claude), DeepSeek, Qwen
 - Routing by API key and model prefix
 - Failover with timeout budget and circuit breaker
+- Tool-call fallback: capability-filtered routing for `tools` / `tool_choice` requests, with structured errors when no tool-capable provider remains
 - Per-key token-bucket rate limiting
 - SQLite usage / cost tracking with price-version snapshots
 - Minimal admin panel at `/panel/`
@@ -40,7 +41,8 @@ llm-router is **OpenAI-compatible for exactly the following API surface, and not
 **Provider capability caveats:**
 
 - `tools`, `tool_choice`, and `response_format` are forwarded as-is to OpenAI-compatible upstreams (OpenAI, DeepSeek, Qwen); whether they take effect depends on that upstream.
-- Anthropic-routed requests carrying `tools` / `tool_choice` / `response_format` are rejected with a `400` in this release — the Anthropic adapter does not map these fields.
+- Tool-call fallback: requests that carry `tools` or `tool_choice` are routed only to providers that support tool calling; when the preferred candidate cannot serve them, failover continues to the next tool-capable provider within the same timeout budget, and if none remains the gateway returns a structured error that names the unsupported field instead of silently dropping it.
+- Anthropic-routed requests carrying `tools` / `tool_choice` / `response_format` are not mapped by the Anthropic adapter; such requests fail over to a tool-capable provider under the rule above rather than reaching Anthropic.
 - Undocumented request fields are passed through where possible, but byte-identical upstream passthrough is not guaranteed.
 
 ## Quick start
@@ -230,7 +232,7 @@ See [docs/OPERATIONS.md](./docs/OPERATIONS.md) for production single-node guidan
 - Rate limiter and circuit breakers are in-memory (not shared across replicas)
 - SQLite is a single-node store; WAL is enabled but there is no multi-replica coordination
 - `providers.weight` / `api_key_enc` columns are **reserved / unused** in this release — failover order is `LLM_ROUTER_PROVIDER_ORDER` among prefix-compatible providers; upstream secrets come from environment variables
-- Anthropic-routed `tools` / `tool_choice` / `response_format` remain unsupported (explicit `400`); OpenAI-compatible upstreams forward these fields as-is
+- The Anthropic adapter does not map `tools` / `tool_choice` / `response_format`; requests carrying them fail over to tool-capable providers instead (see [Compatibility scope](#compatibility-scope))
 - No billing product / multi-tenant RBAC beyond API keys
 - Streaming usage: when the upstream SSE includes a usage-bearing chunk, tokens are recorded as `accounting_status=actual`. If usage cannot be observed, the ledger row is marked `accounting_status=unavailable` and cost is not invented (no synthetic token counts).
 - No production-scale validation has been performed; Docker/CI smokes cover packaged defaults only

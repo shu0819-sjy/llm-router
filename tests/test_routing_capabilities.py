@@ -212,7 +212,7 @@ def test_forced_provider_capability_mismatch(test_settings: Settings) -> None:
         "claude-3-haiku",
         require_capabilities=capabilities_for_tools_request(has_tools=True),
     )
-    assert d.reason == "forced_provider_model_mismatch"
+    assert d.reason == "forced_provider_capability_mismatch"
     assert d.candidates == []
 
 
