@@ -1,4 +1,4 @@
-﻿.git
+.git
 .github
 .venv
 venv
@@ -29,5 +29,4 @@ data/*.db-*
 tests
 scripts
 HARDENING_PLAN.md
-RELEASE_NOTES_v0.1.md
 verification-report.md

@@ -9,10 +9,16 @@ on:
 permissions:
   contents: read
 
+# No concurrency.cancel-in-progress — past "cancelled" conclusions were NOT
+# caused by overlapping runs. Python 3.12 unit tests hung until the GitHub
+# Actions default 6h job timeout while 3.11 + Docker stayed green. Job/step
+# timeouts below fail fast instead of looking like a manual cancel.
+
 jobs:
   test:
     name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -43,7 +49,9 @@ jobs:
         run: mypy app
 
       - name: Unit tests with coverage gate
-        run: python -m pytest -q --cov=app --cov-report=term-missing
+        # Dual cap: GHA step timeout + GNU coreutils timeout on ubuntu runners.
+        timeout-minutes: 12
+        run: timeout 600 python -m pytest -q --cov=app --cov-report=term-missing
         env:
           # Never enable live upstream tests in default CI
           LLM_ROUTER_RUN_INTEGRATION: "0"
@@ -58,6 +66,7 @@ jobs:
   docker:
     name: Docker build, health and restart/migration smoke
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v4

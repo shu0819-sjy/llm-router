@@ -69,4 +69,4 @@ See [SECURITY.md](./SECURITY.md) for vulnerability reporting.
 - Request/SSRF/diagnostics boundaries and sanitized client errors
 - Hard mypy gate, digest-pinned base image, restart/migration smoke, opt-in provider matrix
 
-See [CHANGELOG.md](./CHANGELOG.md) for the full list. Historical notes for the prior line: [RELEASE_NOTES_v0.2.md](./RELEASE_NOTES_v0.2.md).
+See [CHANGELOG.md](./CHANGELOG.md) for the full list. The active product line is **0.3.x only**; earlier 0.1/0.2 GitHub releases and tags have been retired.

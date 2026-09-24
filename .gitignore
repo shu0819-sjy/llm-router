@@ -22,3 +22,5 @@ data/*.db-*
 .vscode/
 .gh-login.*
 *.pid
+.pip-cache/
+.tools/
