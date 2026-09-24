@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import re
@@ -151,15 +152,29 @@ class StreamStart:
     usage: StreamUsage = field(default_factory=StreamUsage)
 
 
+async def _aclose_aiter(aiter: AsyncIterator[Any] | None) -> None:
+    """Best-effort close so nested provider generators run their ``finally``."""
+    if aiter is None:
+        return
+    aclose = getattr(aiter, "aclose", None)
+    if aclose is None:
+        return
+    with contextlib.suppress(Exception):
+        await aclose()
+
+
 async def iter_openai_sse(chunks: AsyncIterator[bytes]) -> AsyncIterator[bytes]:
     """
     Passthrough upstream SSE bytes with backpressure:
     each chunk is yielded to the ASGI server before pulling the next
     (async for / StreamingResponse already awaits sends).
     """
-    async for chunk in chunks:
-        if chunk:
-            yield chunk
+    try:
+        async for chunk in chunks:
+            if chunk:
+                yield chunk
+    finally:
+        await _aclose_aiter(chunks)
 
 
 async def iter_openai_sse_with_usage(
@@ -174,6 +189,10 @@ async def iter_openai_sse_with_usage(
     Post-first-byte transport errors emit a single SSE error event and stop
     (no provider hop / no duplicate upstream output). Updates ``usage`` with
     TTFB, total duration, ``saw_done``, and ``saw_upstream_error``.
+
+    Always ``aclose``s the upstream iterator so client disconnect / task
+    cancellation cannot leak provider async generators (Python 3.12 hangs
+    the process when those generators keep sleeping).
     """
     clock = clock or time.perf_counter
     usage.mark_started(clock=clock)
@@ -200,6 +219,7 @@ async def iter_openai_sse_with_usage(
         return
     finally:
         usage.mark_finished(clock=clock)
+        await _aclose_aiter(chunks)
 
     if usage.accounting_status != "actual":
         usage.accounting_status = "unavailable"
@@ -250,6 +270,8 @@ async def stream_chat_with_failover(
         timeout_ms = min(default_timeout_ms, max(1, int(remaining_s * 1000)))
         saw_try = True
         attempt_start = clock()
+        agen: AsyncIterator[bytes] | None = None
+        committed = False
         try:
             agen = provider.chat_stream(req, timeout_ms=timeout_ms)
             # Pull until first valid SSE data chunk before committing to client
@@ -271,12 +293,17 @@ async def stream_chat_with_failover(
                 _first: bytes = first_valid or b"",
                 _agen: AsyncIterator[bytes] = agen,
             ) -> AsyncIterator[bytes]:
-                for p in _preamble:
-                    yield p
-                if _first:
-                    yield _first
-                async for c in _agen:
-                    yield c
+                try:
+                    for p in _preamble:
+                        yield p
+                    if _first:
+                        yield _first
+                    async for c in _agen:
+                        yield c
+                finally:
+                    # Propagate close into provider.chat_stream so its finally
+                    # (and any upstream httpx stream) always runs on cancel.
+                    await _aclose_aiter(_agen)
 
             attempts.append(
                 {
@@ -285,6 +312,7 @@ async def stream_chat_with_failover(
                     "elapsed_ms": (clock() - attempt_start) * 1000,
                 }
             )
+            committed = True
             return StreamStart(
                 provider_id=provider.id,
                 chunks=_chain(),
@@ -293,12 +321,14 @@ async def stream_chat_with_failover(
             )
         except StopAsyncIteration:
             # Empty stream — treat as success with DONE only (committed; no failover)
+            await _aclose_aiter(agen)
             breaker.record_success()
             usage = StreamUsage(accounting_status="unavailable", saw_done=True)
 
             async def _empty() -> AsyncIterator[bytes]:
                 yield b"data: [DONE]\n\n"
 
+            committed = True
             return StreamStart(
                 provider_id=provider.id,
                 chunks=_empty(),
@@ -363,6 +393,9 @@ async def stream_chat_with_failover(
                 attempts=attempts,
                 status_code=getattr(exc, "status_code", None) or 502,
             ) from exc
+        finally:
+            if not committed:
+                await _aclose_aiter(agen)
 
     status = 504 if saw_try else 502
     msg = "failover budget exhausted" if saw_try else "no healthy providers available"

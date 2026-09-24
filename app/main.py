@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from contextlib import asynccontextmanager
@@ -95,6 +96,16 @@ def create_app(
             getattr(app.state.settings, "env", "production"),
         )
         yield
+        # Drain background stream-usage tasks so pytest / workers exit cleanly
+        # (leaked tasks + unclosed async generators were hanging Py3.12 CI).
+        pending = set(getattr(app.state, "_bg_usage_tasks", set()) or set())
+        if pending:
+            await asyncio.wait(pending, timeout=5)
+            for task in pending:
+                if not task.done():
+                    task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
         reg: ProviderRegistry = app.state.registry
         await reg.aclose()
         router = app.state.key_router

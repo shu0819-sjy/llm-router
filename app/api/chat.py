@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from typing import Any
 
@@ -361,13 +362,25 @@ async def chat_completions(
             )
 
         async def event_gen():
+            # Hold an explicit reference so CancelledError (Starlette disconnect)
+            # still acloses nested provider generators. Breaking only on
+            # request.is_disconnected() is racy on Py3.12: the response task is
+            # often cancelled at `yield` before the next disconnect poll.
+            stream = iter_openai_sse_with_usage(started.chunks, started.usage)
             try:
-                async for chunk in iter_openai_sse_with_usage(started.chunks, started.usage):
+                async for chunk in stream:
                     yield chunk
                     if await request.is_disconnected():
                         started.usage.client_disconnected = True
                         break
+            except asyncio.CancelledError:
+                started.usage.client_disconnected = True
+                raise
             finally:
+                aclose = getattr(stream, "aclose", None)
+                if aclose is not None:
+                    with contextlib.suppress(Exception):
+                        await aclose()
                 # Honest accounting after stream completes (or client disconnect).
                 # Spawn outside the response cancel scope so disconnect cannot
                 # drop the usage row (shield alone is insufficient under anyio).
@@ -398,13 +411,9 @@ async def chat_completions(
                         ttfb_ms=_as_latency_ms(started.usage.ttfb_ms, saw_bytes=saw_bytes),
                     ),
                 )
-                # Best-effort wait when not cancelled; ignore cancel on wait.
-                try:
+                # Best-effort wait when not cancelled; bg task outlives cancel.
+                with contextlib.suppress(asyncio.CancelledError, Exception):
                     await asyncio.shield(task)
-                except asyncio.CancelledError:
-                    raise
-                except Exception:
-                    logger.exception("stream usage wait failed")
 
         headers = {
             **rate_headers,
