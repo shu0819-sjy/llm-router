@@ -1,12 +1,15 @@
 # llm-router
 
+[![CI](https://github.com/shu0819-sjy/llm-router/actions/workflows/ci.yml/badge.svg)](https://github.com/shu0819-sjy/llm-router/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
+[![Version](https://img.shields.io/badge/version-0.3.2-blue.svg)](./pyproject.toml)
+
 LLM gateway with **OpenAI-compatible Chat Completions and Models APIs**, built with FastAPI and asyncio.
 
 Point your apps at a single `/v1/chat/completions` endpoint. The gateway routes traffic across providers (OpenAI, Anthropic, DeepSeek, Qwen), fails over when an upstream is unhealthy, and keeps a simple usage/cost ledger in SQLite. OpenAI API compatibility is limited to the endpoints listed under [Compatibility scope](#compatibility-scope) — llm-router is not a drop-in replacement for the full OpenAI API.
 
 Inspired by projects like one-api / new-api, rewritten around asyncio + `httpx.AsyncClient`.
-
-[![CI](https://github.com/shu0819-sjy/llm-router/actions/workflows/ci.yml/badge.svg)](https://github.com/shu0819-sjy/llm-router/actions/workflows/ci.yml)
 
 ## Features
 
