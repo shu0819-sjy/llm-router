@@ -48,9 +48,10 @@ Do not enable `LLM_ROUTER_RUN_INTEGRATION` in default CI.
 ## Lint and types
 
 - Lint (hard gate in CI): `ruff check app tests scripts`
+- Format (hard gate in CI): `ruff format --check app tests scripts`
 - Types (hard gate in CI as of v0.3): `mypy app`
 
-Both ruff and mypy must pass before merge. The residual mypy `disable_error_code` list in `pyproject.toml` is a documented, itemized set (assignment / arg-type / return-value) with a known path to removal — do not widen it. Newly introduced type errors in touched code should be fixed in the same PR.
+Ruff check, ruff format, and mypy must all pass before merge. The residual mypy `disable_error_code` list in `pyproject.toml` is a documented, itemized set (assignment / arg-type / return-value) with a known path to removal — do not widen it. Newly introduced type errors in touched code should be fixed in the same PR.
 
 *(Supersedes the v0.2.0 note that mypy was `continue-on-error` / informational only.)*
 

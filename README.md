@@ -225,6 +225,11 @@ docker-compose.yml
 .env.example
 ```
 
+## Architecture
+
+Module boundaries (providers / routing / failover / storage / streaming):
+[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).
+
 ## Single-node operations
 
 See [docs/OPERATIONS.md](./docs/OPERATIONS.md) for production single-node guidance (admin token, SQLite volume, health probes, restart policy, Prometheus). **Do not** run multiple replicas against one SQLite file expecting shared rate-limit or circuit state.
