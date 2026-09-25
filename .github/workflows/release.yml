@@ -1,0 +1,56 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build release notes from CHANGELOG
+        id: notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          VER="${TAG#v}"
+          NOTES_FILE="${RUNNER_TEMP}/release-notes.md"
+          python3 - "$VER" "$NOTES_FILE" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+
+          ver, out = sys.argv[1], Path(sys.argv[2])
+          changelog = Path("CHANGELOG.md")
+          if not changelog.exists():
+              out.write_text(f"Release {ver}\n", encoding="utf-8")
+              raise SystemExit(0)
+          text = changelog.read_text(encoding="utf-8")
+          pat = rf"^## \[?{re.escape(ver)}\]?[^\n]*\n(.*?)(?=^## |\Z)"
+          match = re.search(pat, text, flags=re.M | re.S)
+          body = match.group(1).strip() if match else f"Release {ver}"
+          out.write_text(body + "\n", encoding="utf-8")
+          PY
+          echo "file=$NOTES_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release (idempotent)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists — skipping create"
+            exit 0
+          fi
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file "${{ steps.notes.outputs.file }}" \
+            --verify-tag

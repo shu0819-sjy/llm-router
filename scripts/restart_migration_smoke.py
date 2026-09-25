@@ -335,7 +335,10 @@ def main() -> int:
             )
         added = key_columns - V02_API_KEY_COLUMNS
         if not (added & KNOWN_ADDED_API_KEY_COLUMNS):
-            fail("migration", f"expected additive column(s) {KNOWN_ADDED_API_KEY_COLUMNS}, got {added}")
+            fail(
+                "migration",
+                f"expected additive column(s) {KNOWN_ADDED_API_KEY_COLUMNS}, got {added}",
+            )
         log("migration", f"schema OK (api_keys added columns: {sorted(added)})")
 
         admin_auth = {"Authorization": f"Bearer {admin_token}"}
@@ -346,7 +349,9 @@ def main() -> int:
             fail("migration", f"seeded v0.2.0 key no longer authenticates (HTTP {status})")
         model_ids = {m.get("id") for m in (models or {}).get("data", [])}
         if SEED_MODEL not in model_ids:
-            fail("migration", f"seeded model price row missing from /v1/models: {sorted(model_ids)}")
+            fail(
+                "migration", f"seeded model price row missing from /v1/models: {sorted(model_ids)}"
+            )
         log("migration", "seeded key + model price survived")
 
         status, usage = http_json("GET", f"{base_url}/panel/api/usage", headers=admin_auth)

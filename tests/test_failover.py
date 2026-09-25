@@ -188,9 +188,7 @@ def test_key_router_forced_provider_and_prefix(test_settings) -> None:
     assert router.authenticate("sk-missing") is None
 
 
-def test_http_failover_under_500ms_via_testclient(
-    test_settings, fake_clock: FakeClock
-) -> None:
+def test_http_failover_under_500ms_via_testclient(test_settings, fake_clock: FakeClock) -> None:
     """End-to-end: primary fails once → compatible secondary succeeds; elapsed < 500.
 
     Both candidates must share the model prefix — v0.3 no longer appends

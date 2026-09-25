@@ -29,9 +29,7 @@ _SECRET_LABEL_PATTERNS: tuple[re.Pattern[str], ...] = (
 )
 
 # Bounded status label values (chat.py / limiter statuses).
-_KNOWN_STATUSES = frozenset(
-    {"ok", "failover", "error", "rate_limited", "other"}
-)
+_KNOWN_STATUSES = frozenset({"ok", "failover", "error", "rate_limited", "other"})
 
 
 def sanitize_metric_label(value: object, *, max_length: int = MAX_LABEL_LENGTH) -> str:
@@ -106,12 +104,10 @@ class MetricsRegistry:
         with self._lock:
             if not self._series_allowed(self.upstream_latency_ms_sum, label):
                 return
-            self.upstream_latency_ms_sum[label] = (
-                self.upstream_latency_ms_sum.get(label, 0.0) + float(ms)
-            )
-            self.upstream_latency_ms_count[label] = (
-                self.upstream_latency_ms_count.get(label, 0) + 1
-            )
+            self.upstream_latency_ms_sum[label] = self.upstream_latency_ms_sum.get(
+                label, 0.0
+            ) + float(ms)
+            self.upstream_latency_ms_count[label] = self.upstream_latency_ms_count.get(label, 0) + 1
 
 
 def render_prometheus(reg: MetricsRegistry, *, extra_circuits: dict[str, str] | None = None) -> str:
@@ -119,9 +115,7 @@ def render_prometheus(reg: MetricsRegistry, *, extra_circuits: dict[str, str] | 
     lines.append("# HELP llm_router_requests_total Total chat requests by provider and status")
     lines.append("# TYPE llm_router_requests_total counter")
     for (provider, status), val in sorted(reg.requests_total.items()):
-        lines.append(
-            f'llm_router_requests_total{{provider="{provider}",status="{status}"}} {val}'
-        )
+        lines.append(f'llm_router_requests_total{{provider="{provider}",status="{status}"}} {val}')
 
     lines.append("# HELP llm_router_failover_total Failover hops")
     lines.append("# TYPE llm_router_failover_total counter")
@@ -137,9 +131,7 @@ def render_prometheus(reg: MetricsRegistry, *, extra_circuits: dict[str, str] | 
     lines.append("# HELP llm_router_tokens_total Token counters")
     lines.append("# TYPE llm_router_tokens_total counter")
     lines.append(f'llm_router_tokens_total{{direction="prompt"}} {reg.tokens_prompt}')
-    lines.append(
-        f'llm_router_tokens_total{{direction="completion"}} {reg.tokens_completion}'
-    )
+    lines.append(f'llm_router_tokens_total{{direction="completion"}} {reg.tokens_completion}')
 
     lines.append("# HELP llm_router_circuit_state Circuit state (0 closed, 1 half-open, 2 open)")
     lines.append("# TYPE llm_router_circuit_state gauge")

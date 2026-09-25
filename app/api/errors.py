@@ -441,9 +441,7 @@ class RequestBoundaryMiddleware:
 
         # Replay the cached body downstream, then fall through to the original
         # receive channel (so disconnects during the response still propagate).
-        pending: list[Message] = [
-            {"type": "http.request", "body": body_bytes, "more_body": False}
-        ]
+        pending: list[Message] = [{"type": "http.request", "body": body_bytes, "more_body": False}]
 
         async def cached_receive() -> Message:
             if pending:

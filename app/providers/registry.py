@@ -67,16 +67,8 @@ class ProviderRegistry:
 def build_default_registry(settings: Settings | None = None) -> ProviderRegistry:
     s = settings or get_settings()
     registry = ProviderRegistry()
-    registry.register(
-        DeepSeekProvider(api_key=s.deepseek_api_key, base_url=s.deepseek_base_url)
-    )
-    registry.register(
-        GPTProvider(api_key=s.openai_api_key, base_url=s.openai_base_url)
-    )
-    registry.register(
-        ClaudeProvider(api_key=s.anthropic_api_key, base_url=s.anthropic_base_url)
-    )
-    registry.register(
-        QwenProvider(api_key=s.qwen_api_key, base_url=s.qwen_base_url)
-    )
+    registry.register(DeepSeekProvider(api_key=s.deepseek_api_key, base_url=s.deepseek_base_url))
+    registry.register(GPTProvider(api_key=s.openai_api_key, base_url=s.openai_base_url))
+    registry.register(ClaudeProvider(api_key=s.anthropic_api_key, base_url=s.anthropic_base_url))
+    registry.register(QwenProvider(api_key=s.qwen_api_key, base_url=s.qwen_base_url))
     return registry

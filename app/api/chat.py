@@ -62,6 +62,7 @@ def _spawn_usage_record(request: Request, coro: Any) -> asyncio.Task[Any]:
     task.add_done_callback(bucket.discard)
     return task
 
+
 # OpenAI-compatible model list lives on the same /v1 router (no main.py wiring).
 router.add_api_route(
     "/models",
@@ -70,6 +71,7 @@ router.add_api_route(
     response_model=ModelListResponse,
     tags=["models"],
 )
+
 
 def _unsupported_tool_fields(body: ChatRequest) -> list[str]:
     """Tool/structured-output fields present on the request."""
@@ -83,9 +85,7 @@ def _unsupported_tool_fields(body: ChatRequest) -> list[str]:
     return unsupported
 
 
-def _reject_unsupported_tools(
-    body: ChatRequest, decision: RouteDecision
-) -> JSONResponse | None:
+def _reject_unsupported_tools(body: ChatRequest, decision: RouteDecision) -> JSONResponse | None:
     """
     Tool-call fallback contract:
 
@@ -128,11 +128,7 @@ def _reject_unsupported_tools(
 
 def _rate_limit_secret(request: Request) -> str:
     settings = request.app.state.settings
-    return (
-        getattr(settings, "rate_limit_secret", "")
-        or getattr(settings, "admin_token", "")
-        or ""
-    )
+    return getattr(settings, "rate_limit_secret", "") or getattr(settings, "admin_token", "") or ""
 
 
 def _rate_limit_or_raise(request: Request, api_key: ApiKeyRecord) -> dict[str, str]:
@@ -402,9 +398,7 @@ async def chat_completions(
                                 "total_tokens": started.usage.total_tokens,
                             },
                         },
-                        latency_ms=_as_latency_ms(
-                            started.usage.duration_ms, saw_bytes=saw_bytes
-                        ),
+                        latency_ms=_as_latency_ms(started.usage.duration_ms, saw_bytes=saw_bytes),
                         status=started.usage.outcome,
                         accounting_status=started.usage.accounting_status,
                         request_id=request_id,

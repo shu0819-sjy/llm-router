@@ -73,9 +73,7 @@ class BenchProvider(Provider):
             "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
         }
 
-    async def chat_stream(
-        self, req: ChatRequest, *, timeout_ms: int
-    ) -> AsyncIterator[bytes]:
+    async def chat_stream(self, req: ChatRequest, *, timeout_ms: int) -> AsyncIterator[bytes]:
         result = await self.chat(req, timeout_ms=timeout_ms)
         yield f"data: {result}\n\n".encode()
         yield b"data: [DONE]\n\n"
@@ -134,8 +132,10 @@ async def main_async(args: argparse.Namespace) -> int:
     mx = max(samples_sorted)
 
     print("llm-router failover benchmark (fakes, no live APIs)")
-    print(f"  rounds={args.rounds} primary_delay={args.primary_delay_ms}ms "
-          f"secondary_delay={args.secondary_delay_ms}ms budget={args.budget_ms}ms")
+    print(
+        f"  rounds={args.rounds} primary_delay={args.primary_delay_ms}ms "
+        f"secondary_delay={args.secondary_delay_ms}ms budget={args.budget_ms}ms"
+    )
     print(f"  mean={mean:.2f}ms  p50={p50:.2f}ms  p95={p95:.2f}ms  max={mx:.2f}ms")
     print(f"  budget_ok={mx < args.budget_ms}  (require max < {args.budget_ms}ms)")
 

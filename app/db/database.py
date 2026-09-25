@@ -138,9 +138,7 @@ class Database:
             ("ttfb_ms", "INTEGER NOT NULL DEFAULT 0"),
         ):
             if col not in usage_cols:
-                await self._conn.execute(
-                    f"ALTER TABLE usage_events ADD COLUMN {col} {ddl}"
-                )
+                await self._conn.execute(f"ALTER TABLE usage_events ADD COLUMN {col} {ddl}")
 
         price_cols = await self._table_columns("model_prices")
         for col, ddl in (
@@ -148,9 +146,7 @@ class Database:
             ("effective_from", "TEXT NOT NULL DEFAULT '1970-01-01T00:00:00+00:00'"),
         ):
             if col not in price_cols:
-                await self._conn.execute(
-                    f"ALTER TABLE model_prices ADD COLUMN {col} {ddl}"
-                )
+                await self._conn.execute(f"ALTER TABLE model_prices ADD COLUMN {col} {ddl}")
 
         key_cols = await self._table_columns("api_keys")
         if "source" not in key_cols:
@@ -180,12 +176,16 @@ class Database:
         await self._conn.commit()
         return cur
 
-    async def fetchone(self, sql: str, params: tuple[Any, ...] | list[Any] = ()) -> aiosqlite.Row | None:
+    async def fetchone(
+        self, sql: str, params: tuple[Any, ...] | list[Any] = ()
+    ) -> aiosqlite.Row | None:
         assert self._conn is not None
         cur = await self._conn.execute(sql, params)
         return await cur.fetchone()
 
-    async def fetchall(self, sql: str, params: tuple[Any, ...] | list[Any] = ()) -> list[aiosqlite.Row]:
+    async def fetchall(
+        self, sql: str, params: tuple[Any, ...] | list[Any] = ()
+    ) -> list[aiosqlite.Row]:
         assert self._conn is not None
         cur = await self._conn.execute(sql, params)
         return await cur.fetchall()
@@ -395,9 +395,7 @@ class Database:
         return self._price_quote_from_row(row)
 
     @classmethod
-    def _best_prefix_price(
-        cls, model: str, rows: list[aiosqlite.Row]
-    ) -> PriceQuote | None:
+    def _best_prefix_price(cls, model: str, rows: list[aiosqlite.Row]) -> PriceQuote | None:
         """按最长模型前缀选择价格；同一前缀的查询结果已按最新生效时间排序。"""
         best: PriceQuote | None = None
         best_len = -1

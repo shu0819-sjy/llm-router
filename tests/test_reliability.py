@@ -89,7 +89,11 @@ async def test_orchestrator_failovers_on_retryable_5xx(fake_clock: FakeClock) ->
             "created": 1,
             "model": "deepseek-chat",
             "choices": [
-                {"index": 0, "message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "ok"},
+                    "finish_reason": "stop",
+                }
             ],
             "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
         },

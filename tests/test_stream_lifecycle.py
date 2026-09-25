@@ -118,9 +118,7 @@ async def test_iter_midstream_failure_is_upstream_error() -> None:
 class _SlowChunks(FakeProvider):
     """Yields slowly so early client close can land before DONE."""
 
-    async def chat_stream(
-        self, req: ChatRequest, *, timeout_ms: int
-    ) -> AsyncIterator[bytes]:
+    async def chat_stream(self, req: ChatRequest, *, timeout_ms: int) -> AsyncIterator[bytes]:
         self._calls += 1
         yield b'data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant","content":"hel"},"finish_reason":null}]}\n\n'
         await asyncio.sleep(0.05)
@@ -130,17 +128,13 @@ class _SlowChunks(FakeProvider):
 
 
 class _NoDoneProvider(FakeProvider):
-    async def chat_stream(
-        self, req: ChatRequest, *, timeout_ms: int
-    ) -> AsyncIterator[bytes]:
+    async def chat_stream(self, req: ChatRequest, *, timeout_ms: int) -> AsyncIterator[bytes]:
         self._calls += 1
         yield b'data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"x"},"finish_reason":null}]}\n\n'
 
 
 class _BoomAfterFirst(FakeProvider):
-    async def chat_stream(
-        self, req: ChatRequest, *, timeout_ms: int
-    ) -> AsyncIterator[bytes]:
+    async def chat_stream(self, req: ChatRequest, *, timeout_ms: int) -> AsyncIterator[bytes]:
         self._calls += 1
         yield b'data: {"choices":[{"delta":{"content":"partial"}}]}\n\n'
         raise UpstreamTimeout("boom")
@@ -174,9 +168,7 @@ def _latest_usage_row(db_path: str) -> sqlite3.Row:
 
 
 def test_http_stream_ok_records_ttfb_and_latency(test_settings) -> None:
-    app = _app_with_provider(
-        test_settings, FakeProvider("deepseek", ["deepseek-", "deepseek"])
-    )
+    app = _app_with_provider(test_settings, FakeProvider("deepseek", ["deepseek-", "deepseek"]))
     with TestClient(app) as client:
         with client.stream(
             "POST",
@@ -200,9 +192,7 @@ def test_http_stream_ok_records_ttfb_and_latency(test_settings) -> None:
 
 
 def test_http_stream_missing_done_records_partial(test_settings) -> None:
-    app = _app_with_provider(
-        test_settings, _NoDoneProvider("deepseek", ["deepseek-", "deepseek"])
-    )
+    app = _app_with_provider(test_settings, _NoDoneProvider("deepseek", ["deepseek-", "deepseek"]))
     with TestClient(app) as client:
         with client.stream(
             "POST",
@@ -223,9 +213,7 @@ def test_http_stream_missing_done_records_partial(test_settings) -> None:
 
 
 def test_http_stream_midstream_error_records_upstream_error(test_settings) -> None:
-    app = _app_with_provider(
-        test_settings, _BoomAfterFirst("deepseek", ["deepseek-", "deepseek"])
-    )
+    app = _app_with_provider(test_settings, _BoomAfterFirst("deepseek", ["deepseek-", "deepseek"]))
     with TestClient(app) as client:
         with client.stream(
             "POST",
@@ -273,9 +261,7 @@ async def test_client_disconnected_outcome_without_done() -> None:
 
 def test_http_stream_early_close_does_not_force_zero_latency(test_settings) -> None:
     """Abandoning the stream still records measured latency (not hardcoded 0)."""
-    app = _app_with_provider(
-        test_settings, _SlowChunks("deepseek", ["deepseek-", "deepseek"])
-    )
+    app = _app_with_provider(test_settings, _SlowChunks("deepseek", ["deepseek-", "deepseek"]))
     with TestClient(app) as client:
         with client.stream(
             "POST",
@@ -307,9 +293,7 @@ _LEAK_MARKERS = (
 class _LeakyMidstream(FakeProvider):
     """Raises mid-stream with credential-like / control-char content."""
 
-    async def chat_stream(
-        self, req: ChatRequest, *, timeout_ms: int
-    ) -> AsyncIterator[bytes]:
+    async def chat_stream(self, req: ChatRequest, *, timeout_ms: int) -> AsyncIterator[bytes]:
         self._calls += 1
         yield b'data: {"choices":[{"delta":{"content":"x"}}]}\n\n'
         raise UpstreamTimeout(
@@ -334,9 +318,7 @@ class _LeakyPreFirstByte(FakeProvider):
         self._calls += 1
         raise UpstreamTimeout(self._LEAK_MSG)
 
-    async def chat_stream(
-        self, req: ChatRequest, *, timeout_ms: int
-    ) -> AsyncIterator[bytes]:
+    async def chat_stream(self, req: ChatRequest, *, timeout_ms: int) -> AsyncIterator[bytes]:
         self._calls += 1
         raise UpstreamTimeout(self._LEAK_MSG)
         if False:  # pragma: no cover — make this an async generator
@@ -344,9 +326,7 @@ class _LeakyPreFirstByte(FakeProvider):
 
 
 def test_http_sse_stream_error_never_leaks_secrets(test_settings) -> None:
-    app = _app_with_provider(
-        test_settings, _LeakyMidstream("deepseek", ["deepseek-", "deepseek"])
-    )
+    app = _app_with_provider(test_settings, _LeakyMidstream("deepseek", ["deepseek-", "deepseek"]))
     with TestClient(app) as client:
         with client.stream(
             "POST",

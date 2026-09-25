@@ -57,7 +57,11 @@ def test_tools_request_skips_non_tool_provider_and_fails_over(test_settings) -> 
         resp = client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer sk-demo-key"},
-            json={"model": "acme-chat", "messages": [{"role": "user", "content": "hi"}], **_TOOLS_BODY},
+            json={
+                "model": "acme-chat",
+                "messages": [{"role": "user", "content": "hi"}],
+                **_TOOLS_BODY,
+            },
         )
     assert resp.status_code == 200
     assert resp.headers.get("X-LLM-Router-Provider") == "acme-pro"
@@ -113,7 +117,9 @@ def test_forced_non_tool_provider_with_tools_names_fields(test_settings) -> None
     """Forced key on a non-tool provider carrying tools -> structured 400."""
     no_tools = FakeProvider("anthropic", ["claude-"])
     no_tools.capabilities = frozenset()
-    forced_key = ApiKeyRecord(name="forced-anthropic", key="sk-forced-anthropic", provider_id="anthropic")
+    forced_key = ApiKeyRecord(
+        name="forced-anthropic", key="sk-forced-anthropic", provider_id="anthropic"
+    )
     reg = ProviderRegistry([no_tools])
     app = _app([no_tools], test_settings)
     app.state.key_router = KeyRouter(reg, settings=test_settings, keys=[forced_key])
@@ -147,7 +153,11 @@ def test_tool_capable_failover_between_capable_candidates(test_settings) -> None
         resp = client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer sk-demo-key"},
-            json={"model": "acme-chat", "messages": [{"role": "user", "content": "hi"}], **_TOOLS_BODY},
+            json={
+                "model": "acme-chat",
+                "messages": [{"role": "user", "content": "hi"}],
+                **_TOOLS_BODY,
+            },
         )
     assert resp.status_code == 200
     assert resp.headers.get("X-LLM-Router-Provider") == "acme-b"

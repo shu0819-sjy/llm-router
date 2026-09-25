@@ -226,9 +226,7 @@ def test_registry_compatible_helper() -> None:
     reg = ProviderRegistry([openai, deepseek, anth])
 
     assert [p.id for p in reg.compatible("gpt-4o")] == ["openai"]
-    assert [p.id for p in reg.compatible("gpt-4o", require_capabilities=["tools"])] == [
-        "openai"
-    ]
+    assert [p.id for p in reg.compatible("gpt-4o", require_capabilities=["tools"])] == ["openai"]
     assert reg.compatible("claude-3", require_capabilities=["tools"]) == []
     # isinstance smoke for Protocol-ish Provider
     assert all(isinstance(p, Provider) for p in reg.enabled())

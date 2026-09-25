@@ -43,9 +43,7 @@ def test_http_429_with_retry_after(test_settings) -> None:
 
     reg = ProviderRegistry([FakeProvider("deepseek", ["deepseek-"])])
     app = create_app(test_settings, registry=reg)
-    app.state.rate_limiter = TokenBucketLimiter(
-        capacity=1, refill_per_s=0.01, cost_per_req=1
-    )
+    app.state.rate_limiter = TokenBucketLimiter(capacity=1, refill_per_s=0.01, cost_per_req=1)
     app.state.key_router = KeyRouter(
         reg,
         settings=test_settings,

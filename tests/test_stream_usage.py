@@ -28,7 +28,7 @@ from tests.conftest import FakeClock, FakeProvider
 
 
 def test_is_valid_sse_data_chunk() -> None:
-    assert is_valid_sse_data_chunk(b"data: {\"x\":1}\n\n")
+    assert is_valid_sse_data_chunk(b'data: {"x":1}\n\n')
     assert is_valid_sse_data_chunk(b": keepalive\n\ndata: [DONE]\n\n")
     assert not is_valid_sse_data_chunk(b"")
     assert not is_valid_sse_data_chunk(b": comment only\n\n")
@@ -100,9 +100,7 @@ async def test_post_first_byte_error_emits_sse_error_no_raise() -> None:
 class _KeepaliveThenData(FakeProvider):
     """Emits a comment keepalive before the first data chunk."""
 
-    async def chat_stream(
-        self, req: ChatRequest, *, timeout_ms: int
-    ) -> AsyncIterator[bytes]:
+    async def chat_stream(self, req: ChatRequest, *, timeout_ms: int) -> AsyncIterator[bytes]:
         self._calls += 1
         if self._calls <= self.fail_times:
             raise self.fail_with
@@ -112,9 +110,7 @@ class _KeepaliveThenData(FakeProvider):
 
 
 class _UsageStreamingProvider(FakeProvider):
-    async def chat_stream(
-        self, req: ChatRequest, *, timeout_ms: int
-    ) -> AsyncIterator[bytes]:
+    async def chat_stream(self, req: ChatRequest, *, timeout_ms: int) -> AsyncIterator[bytes]:
         self._calls += 1
         yield b'data: {"id":"chatcmpl-u","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant","content":"hi"},"finish_reason":null}]}\n\n'
         yield (
@@ -158,9 +154,7 @@ async def test_no_failover_after_first_valid_byte(fake_clock: FakeClock) -> None
     """Once committed, mid-stream failure stays on that provider (no hop)."""
 
     class BoomAfterFirst(FakeProvider):
-        async def chat_stream(
-            self, req: ChatRequest, *, timeout_ms: int
-        ) -> AsyncIterator[bytes]:
+        async def chat_stream(self, req: ChatRequest, *, timeout_ms: int) -> AsyncIterator[bytes]:
             self._calls += 1
             yield b'data: {"choices":[{"delta":{"content":"partial"}}]}\n\n'
             raise UpstreamTimeout("mid-stream timeout")

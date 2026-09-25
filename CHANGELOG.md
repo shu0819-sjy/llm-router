@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.3] — 2026-09-25
+
+### Fixed
+
+- Client disconnect mid-SSE now `aclose`s nested async generators so finalize / usage accounting always runs and the process cannot hang on Python 3.12
+- CI: add `ruff format --check` hard gate; reformat `app` / `tests` / `scripts` to match
+
+### Added
+
+- Tag-driven GitHub Release workflow (`.github/workflows/release.yml`)
+
 ## [0.3.2] — 2026-09-24
 
 Tool-call fallback: capability-aware routing for requests carrying `tools` / `tool_choice` / `response_format`.

@@ -104,9 +104,7 @@ class OpenAICompatProvider(Provider):
             )
         return resp.json()
 
-    async def chat_stream(
-        self, req: ChatRequest, *, timeout_ms: int
-    ) -> AsyncIterator[bytes]:
+    async def chat_stream(self, req: ChatRequest, *, timeout_ms: int) -> AsyncIterator[bytes]:
         if not self.enabled:
             raise UpstreamError(f"provider {self.id} disabled", status_code=503)
         timeout_s = max(timeout_ms, 1) / 1000.0

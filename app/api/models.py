@@ -78,9 +78,7 @@ async def list_model_ids(
     if not ids:
         if db is not None and getattr(db, "connected", False):
             try:
-                rows = await db.fetchall(
-                    "SELECT DISTINCT model FROM model_prices ORDER BY model"
-                )
+                rows = await db.fetchall("SELECT DISTINCT model FROM model_prices ORDER BY model")
                 ids = [str(r["model"]) for r in rows]
             except Exception:
                 ids = []
@@ -98,10 +96,7 @@ async def list_models(
 ) -> dict[str, Any]:
     """OpenAI-shaped model list. Mounted on the /v1 chat router."""
     ids = await list_model_ids(request, _api_key)
-    data = [
-        ModelCard(id=mid, created=0, owned_by=_owned_by(mid)).model_dump()
-        for mid in ids
-    ]
+    data = [ModelCard(id=mid, created=0, owned_by=_owned_by(mid)).model_dump() for mid in ids]
     return {"object": "list", "data": data}
 
 

@@ -40,9 +40,7 @@ def _app(test_settings: Settings, **attr_overrides) -> object:
 def _chat_body(messages: int = 1, tools: int = 0) -> dict:
     body: dict = {
         "model": "deepseek-chat",
-        "messages": [
-            {"role": "user", "content": f"msg {i}"} for i in range(messages)
-        ],
+        "messages": [{"role": "user", "content": f"msg {i}"} for i in range(messages)],
     }
     if tools:
         body["tools"] = [
@@ -132,9 +130,7 @@ def test_too_many_tools_returns_400(test_settings: Settings) -> None:
     app = _app(test_settings, max_tools=2)
     provider = app.state.registry.get("deepseek")
     with TestClient(app) as client:
-        r = client.post(
-            "/v1/chat/completions", headers=AUTH, json=_chat_body(messages=1, tools=3)
-        )
+        r = client.post("/v1/chat/completions", headers=AUTH, json=_chat_body(messages=1, tools=3))
         assert r.status_code == 400
         err = r.json()["error"]
         assert err["code"] == "too_many_tools"

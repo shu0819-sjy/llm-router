@@ -40,4 +40,6 @@ def rate_limit_key_id(
 def looks_like_raw_api_key(value: str) -> bool:
     """Heuristic used in tests/guards — digest ids never look like sk- keys."""
     v = (value or "").strip()
-    return v.startswith("sk-") or (len(v) > 8 and ":" not in v[:4] and not v.startswith("hk:") and not v.startswith("kid:"))
+    return v.startswith("sk-") or (
+        len(v) > 8 and ":" not in v[:4] and not v.startswith("hk:") and not v.startswith("kid:")
+    )

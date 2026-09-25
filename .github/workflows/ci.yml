@@ -45,6 +45,9 @@ jobs:
       - name: Ruff lint
         run: ruff check app tests scripts
 
+      - name: Ruff format check
+        run: ruff format --check app tests scripts
+
       - name: Type check (hard gate)
         run: mypy app
 

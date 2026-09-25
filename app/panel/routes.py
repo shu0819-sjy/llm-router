@@ -18,7 +18,14 @@ from app.models import ApiKeyRecord
 from app.panel.auth import require_admin
 
 
-def _audit(request: Request, action: str, *, resource_type: str, resource_id: Any, detail: dict | None = None) -> None:
+def _audit(
+    request: Request,
+    action: str,
+    *,
+    resource_type: str,
+    resource_id: Any,
+    detail: dict | None = None,
+) -> None:
     audit = getattr(request.app.state, "audit", None)
     if audit is None:
         return
@@ -30,6 +37,7 @@ def _audit(request: Request, action: str, *, resource_type: str, resource_id: An
         resource_id=resource_id,
         detail=detail,
     )
+
 
 router = APIRouter(prefix="/panel", tags=["panel"])
 

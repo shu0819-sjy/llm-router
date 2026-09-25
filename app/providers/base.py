@@ -45,9 +45,7 @@ class Provider(ABC):
         """Non-streaming chat completion → OpenAI-shaped dict."""
 
     @abstractmethod
-    async def chat_stream(
-        self, req: ChatRequest, *, timeout_ms: int
-    ) -> AsyncIterator[bytes]:
+    async def chat_stream(self, req: ChatRequest, *, timeout_ms: int) -> AsyncIterator[bytes]:
         """Streaming chat → raw OpenAI-shaped SSE byte chunks."""
         # pragma: no cover - abstract async generator
         if False:  # noqa: SIM510

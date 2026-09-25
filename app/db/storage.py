@@ -201,9 +201,7 @@ class InMemoryStorage:
         if at is None:
             return self._prices.get(model)
         candidates = [
-            quote
-            for quote in self._price_history.get(model, [])
-            if quote.effective_from <= at
+            quote for quote in self._price_history.get(model, []) if quote.effective_from <= at
         ]
         return max(candidates, key=lambda quote: quote.effective_from, default=None)
 

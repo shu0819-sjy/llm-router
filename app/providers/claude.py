@@ -85,9 +85,7 @@ class ClaudeProvider(Provider):
         if req.top_p is not None:
             payload["top_p"] = req.top_p
         if req.stop is not None:
-            payload["stop_sequences"] = (
-                [req.stop] if isinstance(req.stop, str) else list(req.stop)
-            )
+            payload["stop_sequences"] = [req.stop] if isinstance(req.stop, str) else list(req.stop)
         return payload
 
     def _from_anthropic(self, data: dict[str, Any], *, model: str) -> dict[str, Any]:
@@ -165,9 +163,7 @@ class ClaudeProvider(Provider):
             )
         return self._from_anthropic(resp.json(), model=req.model)
 
-    async def chat_stream(
-        self, req: ChatRequest, *, timeout_ms: int
-    ) -> AsyncIterator[bytes]:
+    async def chat_stream(self, req: ChatRequest, *, timeout_ms: int) -> AsyncIterator[bytes]:
         """Stream Anthropic SSE and remap to OpenAI chat.completion.chunk SSE."""
         if not self.enabled:
             raise UpstreamError(f"provider {self.id} disabled", status_code=503)
@@ -251,9 +247,7 @@ class ClaudeProvider(Provider):
                                 "object": "chat.completion.chunk",
                                 "created": created,
                                 "model": model,
-                                "choices": [
-                                    {"index": 0, "delta": {}, "finish_reason": finish}
-                                ],
+                                "choices": [{"index": 0, "delta": {}, "finish_reason": finish}],
                             }
                             yield f"data: {json.dumps(chunk)}\n\n".encode()
                 yield b"data: [DONE]\n\n"

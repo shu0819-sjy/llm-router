@@ -133,7 +133,9 @@ class FailoverOrchestrator:
                         str(exc),
                         last_error=exc,
                         attempts=attempts,
-                        status_code=classification.status_code or getattr(exc, "status_code", None) or 400,
+                        status_code=classification.status_code
+                        or getattr(exc, "status_code", None)
+                        or 400,
                     ) from exc
                 last_error = exc
                 attempts.append(
@@ -141,7 +143,8 @@ class FailoverOrchestrator:
                         "provider_id": provider.id,
                         "ok": False,
                         "error": str(exc),
-                        "status_code": classification.status_code or getattr(exc, "status_code", None),
+                        "status_code": classification.status_code
+                        or getattr(exc, "status_code", None),
                         "elapsed_ms": (self._clock() - attempt_start) * 1000,
                         "failover": True,
                         "retry_class": classification.retry_class.value,
@@ -158,7 +161,8 @@ class FailoverOrchestrator:
                         "provider_id": provider.id,
                         "ok": False,
                         "error": str(exc),
-                        "status_code": classification.status_code or getattr(exc, "status_code", None),
+                        "status_code": classification.status_code
+                        or getattr(exc, "status_code", None),
                         "elapsed_ms": (self._clock() - attempt_start) * 1000,
                         "failover": is_retryable(exc),
                         "retry_class": classification.retry_class.value,

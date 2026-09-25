@@ -115,9 +115,7 @@ def validate_provider_base_url(
     if literal is not None:
         reason = _unsafe_ip_reason(literal)
         if reason:
-            raise UnsafeProviderUrlError(
-                f"provider base URL points at a {reason} ({host})"
-            )
+            raise UnsafeProviderUrlError(f"provider base URL points at a {reason} ({host})")
         return normalized
 
     if not resolve:
@@ -213,9 +211,7 @@ class Settings(BaseSettings):
         default=24, ge=8, le=1024, alias="LLM_ROUTER_ADMIN_TOKEN_MIN_LENGTH"
     )
     # Request boundary limits (enforced by app.api.errors.RequestBoundaryMiddleware).
-    max_body_bytes: int = Field(
-        default=2 * 1024 * 1024, ge=1024, alias="LLM_ROUTER_MAX_BODY_BYTES"
-    )
+    max_body_bytes: int = Field(default=2 * 1024 * 1024, ge=1024, alias="LLM_ROUTER_MAX_BODY_BYTES")
     max_messages: int = Field(default=512, ge=1, alias="LLM_ROUTER_MAX_MESSAGES")
     max_tools: int = Field(default=64, ge=1, alias="LLM_ROUTER_MAX_TOOLS")
     max_concurrent_chat_requests: int = Field(
@@ -269,9 +265,7 @@ class Settings(BaseSettings):
                     resolve=False,
                 )
             except UnsafeProviderUrlError as exc:
-                raise ValueError(
-                    f"{env_name} rejected by the provider URL policy: {exc}"
-                ) from exc
+                raise ValueError(f"{env_name} rejected by the provider URL policy: {exc}") from exc
         return self
 
     def provider_base_urls(self) -> dict[str, str]:

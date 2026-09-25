@@ -100,9 +100,7 @@ class FakeProvider(Provider):
         out["model"] = req.model
         return out
 
-    async def chat_stream(
-        self, req: ChatRequest, *, timeout_ms: int
-    ) -> AsyncIterator[bytes]:
+    async def chat_stream(self, req: ChatRequest, *, timeout_ms: int) -> AsyncIterator[bytes]:
         self._calls += 1
         if self.clock and self.delay_s:
             self.clock.advance(self.delay_s)

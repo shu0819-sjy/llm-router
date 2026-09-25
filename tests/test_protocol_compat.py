@@ -27,9 +27,7 @@ class CapturingProvider(FakeProvider):
         self.last_req = req
         return await super().chat(req, timeout_ms=timeout_ms)
 
-    async def chat_stream(
-        self, req: ChatRequest, *, timeout_ms: int
-    ) -> AsyncIterator[bytes]:
+    async def chat_stream(self, req: ChatRequest, *, timeout_ms: int) -> AsyncIterator[bytes]:
         self.last_req = req
         async for c in super().chat_stream(req, timeout_ms=timeout_ms):
             yield c

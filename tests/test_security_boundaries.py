@@ -100,9 +100,7 @@ def test_assert_secure_admin_token_enforces_quality_in_production(
 def test_assert_secure_admin_token_accepts_strong_production_token(
     tmp_path,
 ) -> None:
-    settings = Settings(
-        env="production", admin_token=STRONG_ADMIN, db_path=str(tmp_path / "s.db")
-    )
+    settings = Settings(env="production", admin_token=STRONG_ADMIN, db_path=str(tmp_path / "s.db"))
     assert_secure_admin_token(settings)  # does not raise
 
 
@@ -110,9 +108,7 @@ def test_assert_secure_admin_token_development_bypass_is_explicit(
     tmp_path,
 ) -> None:
     # Development mode remains an explicit escape hatch for placeholders.
-    settings = Settings(
-        env="development", admin_token="", db_path=str(tmp_path / "s.db")
-    )
+    settings = Settings(env="development", admin_token="", db_path=str(tmp_path / "s.db"))
     assert_secure_admin_token(settings)  # does not raise
 
 
@@ -127,9 +123,7 @@ def test_admin_token_min_length_override(tmp_path) -> None:
         assert_secure_admin_token(settings)
 
 
-def test_production_startup_fails_on_weak_admin_token(
-    test_settings: Settings, tmp_path
-) -> None:
+def test_production_startup_fails_on_weak_admin_token(test_settings: Settings, tmp_path) -> None:
     settings = Settings(
         env="production",
         admin_token="weak-token",
@@ -158,9 +152,7 @@ def test_panel_rejects_weak_token_in_production_mode(
     with TestClient(app) as client:
         # Simulate a production deployment with a weak token configured.
         app.state.settings.env = "production"
-        r = client.get(
-            "/panel/api/keys", headers={"Authorization": "Bearer shorttoken123"}
-        )
+        r = client.get("/panel/api/keys", headers={"Authorization": "Bearer shorttoken123"})
         assert r.status_code == 503
         body = r.json()
         err = body.get("error") or (body.get("detail") or {}).get("error") or {}
@@ -226,9 +218,7 @@ def test_diagnostics_admin_override_in_development(test_settings: Settings) -> N
     with TestClient(app) as client:
         assert client.get("/metrics").status_code == 401
         assert (
-            client.get(
-                "/metrics", headers={"Authorization": f"Bearer {STRONG_ADMIN}"}
-            ).status_code
+            client.get("/metrics", headers={"Authorization": f"Bearer {STRONG_ADMIN}"}).status_code
             == 200
         )
 
@@ -330,9 +320,7 @@ def test_sanitize_client_error_message_redacts_secrets() -> None:
     assert "sk-AbCdEf12345678" not in sanitize_client_error_message(
         "upstream rejected key sk-AbCdEf12345678"
     )
-    assert "[redacted]" in sanitize_client_error_message(
-        "upstream rejected key sk-AbCdEf12345678"
-    )
+    assert "[redacted]" in sanitize_client_error_message("upstream rejected key sk-AbCdEf12345678")
     # Bearer tokens
     out = sanitize_client_error_message("header was Bearer abc.def.ghi")
     assert "abc.def.ghi" not in out

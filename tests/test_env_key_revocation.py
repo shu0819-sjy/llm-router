@@ -64,9 +64,7 @@ async def test_sync_environment_keys_sets_source_and_revokes_removed(tmp_path) -
     )
     assert row_a2 is not None and int(row_a2["is_active"]) == 1
 
-    panel = await db.fetchone(
-        "SELECT is_active, source FROM api_keys WHERE id = ?", (panel_id,)
-    )
+    panel = await db.fetchone("SELECT is_active, source FROM api_keys WHERE id = ?", (panel_id,))
     assert panel is not None
     assert int(panel["is_active"]) == 1
     assert panel["source"] == "panel"

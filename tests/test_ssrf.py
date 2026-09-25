@@ -100,9 +100,7 @@ def test_explicit_development_override_allows_private_targets() -> None:
     with pytest.raises(UnsafeProviderUrlError):
         validate_provider_base_url("ftp://127.0.0.1:9000", allow_private=True)
     with pytest.raises(UnsafeProviderUrlError):
-        validate_provider_base_url(
-            "http://user:pass@127.0.0.1:9000", allow_private=True
-        )
+        validate_provider_base_url("http://user:pass@127.0.0.1:9000", allow_private=True)
 
 
 def test_dns_resolution_to_private_range_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -118,8 +116,7 @@ def test_dns_resolution_to_private_range_rejected(monkeypatch: pytest.MonkeyPatc
 
     monkeypatch.setattr(config_module.socket, "getaddrinfo", fake_public)
     assert (
-        validate_provider_base_url("https://internal.example/v1")
-        == "https://internal.example/v1"
+        validate_provider_base_url("https://internal.example/v1") == "https://internal.example/v1"
     )
 
 

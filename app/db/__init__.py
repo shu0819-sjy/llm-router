@@ -13,7 +13,9 @@ from app.db.storage import (
 )
 
 
-def build_sqlite_storage_bundle(db: Database, *, ledger: UsageLedger | None = None) -> StorageBundle:
+def build_sqlite_storage_bundle(
+    db: Database, *, ledger: UsageLedger | None = None
+) -> StorageBundle:
     """SQLite-backed StorageBundle (the only shipped production adapter)."""
     usage = ledger if ledger is not None else UsageLedger(db)
     return StorageBundle(api_keys=db, prices=db, usage=usage, backend="sqlite")

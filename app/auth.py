@@ -90,9 +90,7 @@ def admin_token_quality_issues(
     if any(ch.isspace() for ch in normalized):
         issues.append("token contains whitespace")
     if len(normalized) < min_length:
-        issues.append(
-            f"token is shorter than the required minimum of {min_length} characters"
-        )
+        issues.append(f"token is shorter than the required minimum of {min_length} characters")
     classes = (
         any(c.islower() for c in normalized),
         any(c.isupper() for c in normalized),
@@ -100,9 +98,7 @@ def admin_token_quality_issues(
         any(not c.isalnum() for c in normalized),
     )
     if sum(classes) < 3:
-        issues.append(
-            "token must mix at least 3 of: lowercase, uppercase, digits, symbols"
-        )
+        issues.append("token must mix at least 3 of: lowercase, uppercase, digits, symbols")
     if len(set(normalized)) == 1:
         issues.append("token is a single repeated character")
     return issues

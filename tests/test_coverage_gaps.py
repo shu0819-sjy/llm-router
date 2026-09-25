@@ -471,10 +471,10 @@ async def test_claude_mapping_edges_errors_and_stream() -> None:
 
     # streaming remap
     anthropic_sse = (
-        'event: content_block_delta\n'
+        "event: content_block_delta\n"
         'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"hel"}}\n\n'
-        'data: not-json\n\n'
-        'event: message_delta\n'
+        "data: not-json\n\n"
+        "event: message_delta\n"
         'data: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}\n\n'
     )
 

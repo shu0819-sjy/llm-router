@@ -37,7 +37,9 @@ def test_constant_time_token_equals_wrong_length_and_value() -> None:
     assert constant_time_token_equals(None, expected) is False
 
 
-def test_assert_secure_admin_token_rejects_outside_development(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_assert_secure_admin_token_rejects_outside_development(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     reset_settings_cache()
     monkeypatch.setenv("LLM_ROUTER_ENV", "production")
     monkeypatch.setenv("LLM_ROUTER_ADMIN_TOKEN", "change-me-admin-token")
@@ -48,7 +50,9 @@ def test_assert_secure_admin_token_rejects_outside_development(monkeypatch: pyte
         assert_secure_admin_token(settings)
 
 
-def test_assert_secure_admin_token_allows_development_placeholder(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_assert_secure_admin_token_allows_development_placeholder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     reset_settings_cache()
     monkeypatch.setenv("LLM_ROUTER_ENV", "development")
     monkeypatch.setenv("LLM_ROUTER_ADMIN_TOKEN", "")
@@ -87,9 +91,14 @@ def test_panel_admin_uses_constant_time_and_rejects_bad_tokens(
     app = create_app(settings, registry=reg)
     with TestClient(app) as client:
         assert client.get("/panel/api/keys").status_code == 401
-        assert client.get("/panel/api/keys", headers={"Authorization": "Bearer wrong"}).status_code == 401
+        assert (
+            client.get("/panel/api/keys", headers={"Authorization": "Bearer wrong"}).status_code
+            == 401
+        )
         # Wrong length
-        assert client.get("/panel/api/keys", headers={"Authorization": "Bearer x"}).status_code == 401
+        assert (
+            client.get("/panel/api/keys", headers={"Authorization": "Bearer x"}).status_code == 401
+        )
         ok = client.get("/panel/api/keys", headers={"Authorization": f"Bearer {admin}"})
         assert ok.status_code == 200
 
@@ -156,14 +165,26 @@ def test_chat_rate_limiter_uses_digest_not_raw_key(
     settings.rate_cost_per_req = 1
     raw = "sk-demo-key"
     reg = ProviderRegistry(
-        [FakeProvider("deepseek", ["deepseek-", "*"], response={
-            "id": "chatcmpl-x",
-            "object": "chat.completion",
-            "created": 1,
-            "model": "deepseek-chat",
-            "choices": [{"index": 0, "message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}],
-            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
-        })]
+        [
+            FakeProvider(
+                "deepseek",
+                ["deepseek-", "*"],
+                response={
+                    "id": "chatcmpl-x",
+                    "object": "chat.completion",
+                    "created": 1,
+                    "model": "deepseek-chat",
+                    "choices": [
+                        {
+                            "index": 0,
+                            "message": {"role": "assistant", "content": "ok"},
+                            "finish_reason": "stop",
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+                },
+            )
+        ]
     )
     app = create_app(settings, registry=reg)
     app.state.key_router = KeyRouter(

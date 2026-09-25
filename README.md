@@ -3,7 +3,7 @@
 [![CI](https://github.com/shu0819-sjy/llm-router/actions/workflows/ci.yml/badge.svg)](https://github.com/shu0819-sjy/llm-router/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/version-0.3.2-blue.svg)](./pyproject.toml)
+[![Version](https://img.shields.io/badge/version-0.3.3-blue.svg)](./pyproject.toml)
 
 LLM gateway with **OpenAI-compatible Chat Completions and Models APIs**, built with FastAPI and asyncio.
 

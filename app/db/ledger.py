@@ -86,9 +86,7 @@ class UsageLedger:
             self._ttfb_column_ready = False
             return False
 
-    async def _execute_with_retry(
-        self, sql: str, params: tuple[Any, ...] | list[Any]
-    ) -> Any:
+    async def _execute_with_retry(self, sql: str, params: tuple[Any, ...] | list[Any]) -> Any:
         last: BaseException | None = None
         for attempt in range(self.write_retries):
             try:
