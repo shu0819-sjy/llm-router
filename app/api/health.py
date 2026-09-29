@@ -24,6 +24,7 @@ Auth / network policy (v0.3 hardening):
 
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Any
 
@@ -41,6 +42,7 @@ from app.auth import (
 from app.metrics.prometheus import render_prometheus
 
 router = APIRouter(tags=["health"])
+_DB_PING_TIMEOUT_S = 2.0
 
 
 def _diagnostics_requires_admin(settings: Any) -> bool:
@@ -119,7 +121,11 @@ async def _db_status(request: Request) -> str:
     db = getattr(request.app.state, "db", None)
     if db is None:
         return "n/a"
-    return "ok" if await db.ping() else "error"
+    try:
+        healthy = await asyncio.wait_for(db.ping(), timeout=_DB_PING_TIMEOUT_S)
+    except Exception:
+        return "error"
+    return "ok" if healthy else "error"
 
 
 @router.get("/health")

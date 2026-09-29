@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
+from types import SimpleNamespace
+
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from app.api.health import _db_status
 from app.metrics.prometheus import MetricsRegistry, render_prometheus
 from app.providers.registry import ProviderRegistry
 from tests.conftest import FakeProvider
@@ -79,3 +84,20 @@ def test_metrics_disabled_returns_404(test_settings, monkeypatch) -> None:
     with TestClient(app) as client:
         r = client.get("/metrics")
         assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_db_status_times_out_for_hung_backend(monkeypatch) -> None:
+    """Health probes must fail closed instead of waiting forever on a backend."""
+
+    async def hung_ping() -> bool:
+        await asyncio.Event().wait()
+        return True
+
+    monkeypatch.setattr("app.api.health._DB_PING_TIMEOUT_S", 0.01)
+    request = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(db=SimpleNamespace(ping=hung_ping)))
+    )
+    status = await _db_status(request)
+
+    assert status == "error"
