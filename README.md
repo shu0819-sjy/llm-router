@@ -140,6 +140,8 @@ See [`.env.example`](./.env.example). Common settings:
 | `LLM_ROUTER_ENV` | `production` | Runtime mode: `production` (default), `development`, or `test`. Outside development/test, insecure admin tokens are rejected. |
 | `LLM_ROUTER_PORT` | `8000` | Listen port |
 | `LLM_ROUTER_DB_PATH` | `./data/llm_router.db` | SQLite path |
+| `LLM_ROUTER_DEPLOYMENT_MODE` | `single-node` | Deployment contract; only `single-node` is supported until a shared state backend is added. |
+| `LLM_ROUTER_REPLICA_COUNT` | `1` | Declared process count; values other than `1` fail startup instead of silently running with inconsistent state. |
 | `LLM_ROUTER_ADMIN_TOKEN` | — | **Required** for panel APIs. Outside development: ≥ `ADMIN_TOKEN_MIN_LENGTH`, mixed character classes, not a placeholder. |
 | `LLM_ROUTER_ADMIN_TOKEN_MIN_LENGTH` | `24` | Production admin-token length floor. |
 | `LLM_ROUTER_RATE_LIMIT_SECRET` | — | Optional HMAC secret for rate-limit bucket digests. If unset, a process-local secret is derived; set explicitly in multi-instance deployments. |
@@ -239,6 +241,7 @@ See [docs/OPERATIONS.md](./docs/OPERATIONS.md) for production single-node guidan
 - **OpenAI compatibility is limited to Chat Completions (JSON + SSE) and the Models list** — see [Compatibility scope](#compatibility-scope); no other OpenAI endpoints are implemented
 - Rate limiter and circuit breakers are in-memory (not shared across replicas)
 - SQLite is a single-node store; WAL is enabled but there is no multi-replica coordination
+- Multi-replica mode is intentionally rejected at configuration time (`LLM_ROUTER_REPLICA_COUNT != 1` or `LLM_ROUTER_DEPLOYMENT_MODE != single-node`); do not scale the container until a shared state adapter is implemented
 - `providers.weight` / `api_key_enc` columns are **reserved / unused** in this release — failover order is `LLM_ROUTER_PROVIDER_ORDER` among prefix-compatible providers; upstream secrets come from environment variables
 - The Anthropic adapter does not map `tools` / `tool_choice` / `response_format`; requests carrying them fail over to tool-capable providers instead (see [Compatibility scope](#compatibility-scope))
 - No billing product / multi-tenant RBAC beyond API keys

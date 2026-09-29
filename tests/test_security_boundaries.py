@@ -230,6 +230,20 @@ def test_diagnostics_reject_invalid_policy_mode() -> None:
         Settings(env="development", diagnostics_auth="yolo")
 
 
+def test_sqlite_rejects_multi_replica_configuration() -> None:
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="single-node"):
+        Settings(env="development", replica_count=2)
+
+
+def test_non_sqlite_replica_mode_is_explicitly_rejected() -> None:
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="single-node"):
+        Settings(env="development", deployment_mode="multi-replica")
+
+
 def test_diagnostics_locked_down_for_weak_production_token(
     test_settings: Settings,
 ) -> None:

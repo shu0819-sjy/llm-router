@@ -166,6 +166,8 @@ class Settings(BaseSettings):
     host: str = Field(default="0.0.0.0", alias="LLM_ROUTER_HOST")
     port: int = Field(default=8000, alias="LLM_ROUTER_PORT")
     db_path: str = Field(default="./data/llm_router.db", alias="LLM_ROUTER_DB_PATH")
+    deployment_mode: str = Field(default="single-node", alias="LLM_ROUTER_DEPLOYMENT_MODE")
+    replica_count: int = Field(default=1, ge=1, alias="LLM_ROUTER_REPLICA_COUNT")
     admin_token: str = Field(default="", alias="LLM_ROUTER_ADMIN_TOKEN")
     # production | development | test — insecure admin tokens only allowed in development/test
     env: str = Field(default="production", alias="LLM_ROUTER_ENV")
@@ -254,6 +256,12 @@ class Settings(BaseSettings):
             raise ValueError(
                 "LLM_ROUTER_ALLOW_PRIVATE_PROVIDER_URLS=true is a development-only "
                 "override and is refused when LLM_ROUTER_ENV=production"
+            )
+        if self.deployment_mode != "single-node" or self.replica_count != 1:
+            raise ValueError(
+                "llm-router currently supports single-node deployment only; "
+                "shared Redis/PostgreSQL storage and distributed rate/circuit state "
+                "are not implemented"
             )
         for env_name, url in self.provider_base_urls().items():
             if not (url or "").strip():

@@ -8,11 +8,12 @@ llm-router 0.3.x is a **single-node** OpenAI-compatible gateway. This note cover
 2. **Upstream keys** — set only the providers you use (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY`, `QWEN_API_KEY`). Empty disables that provider.
 3. **Gateway keys** — bootstrap with `LLM_ROUTER_API_KEYS` and/or create keys in `/panel/`. Panel keys are hashed in SQLite and survive restart.
 4. **SQLite volume** — persist `LLM_ROUTER_DB_PATH` (Compose maps `./data` → `/app/data`). One writer process only.
-5. **Timeouts** — defaults are `30000` ms per attempt and `60000` ms failover budget. Raise for slow models; do not use the old 500 ms demo values in production.
-6. **Health probes** — liveness `GET /health/live`; readiness `GET /health/ready`; legacy `GET /health` remains.
-7. **Diagnostics** — keep `LLM_ROUTER_DIAGNOSTICS_AUTH=auto` (or `admin`) so `/health/providers` and `/metrics` are not public in production.
-8. **Prometheus** — optional `LLM_ROUTER_ENABLE_PROMETHEUS=true`; still gated by diagnostics auth.
-9. **Restart** — Compose `restart: unless-stopped` (or equivalent). Prefer one container / one uvicorn process per database file.
+5. **Replica declaration** — keep `LLM_ROUTER_DEPLOYMENT_MODE=single-node` and `LLM_ROUTER_REPLICA_COUNT=1`. The process refuses unsupported multi-replica declarations at startup; this is deliberate because rate limits, circuit breakers, and SQLite are not shared.
+6. **Timeouts** — defaults are `30000` ms per attempt and `60000` ms failover budget. Raise for slow models; do not use the old 500 ms demo values in production.
+7. **Health probes** — liveness `GET /health/live`; readiness `GET /health/ready`; legacy `/health` remains. Database probes have a bounded timeout and fail closed.
+8. **Diagnostics** — keep `LLM_ROUTER_DIAGNOSTICS_AUTH=auto` (or `admin`) so `/health/providers` and `/metrics` are not public in production.
+9. **Prometheus** — optional `LLM_ROUTER_ENABLE_PROMETHEUS=true`; still gated by diagnostics auth.
+10. **Restart** — Compose `restart: unless-stopped` (or equivalent). Prefer one container / one uvicorn process per database file.
 
 ## Docker Compose
 
