@@ -244,6 +244,11 @@ def test_non_sqlite_replica_mode_is_explicitly_rejected() -> None:
         Settings(env="development", deployment_mode="multi-replica")
 
 
+def test_single_node_mode_is_normalized() -> None:
+    settings = Settings(env="development", deployment_mode=" SINGLE-NODE ")
+    assert settings.deployment_mode == "single-node"
+
+
 def test_diagnostics_locked_down_for_weak_production_token(
     test_settings: Settings,
 ) -> None:

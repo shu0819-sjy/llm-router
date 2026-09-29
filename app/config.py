@@ -232,6 +232,12 @@ class Settings(BaseSettings):
     def _strip_order(cls, v: Any) -> str:
         return str(v or "deepseek,openai,anthropic,qwen").strip()
 
+    @field_validator("deployment_mode", mode="before")
+    @classmethod
+    def _normalize_deployment_mode(cls, v: Any) -> str:
+        """Normalize deployment mode input from environment/config files."""
+        return str(v or "single-node").strip().lower()
+
     @field_validator("diagnostics_auth", mode="before")
     @classmethod
     def _validate_diagnostics_auth(cls, v: Any) -> str:
