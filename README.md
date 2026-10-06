@@ -75,9 +75,24 @@ curl -fsS http://localhost:8000/health/ready
 
 ### Development
 
+The native development path runs on Windows, macOS, and Linux with Python 3.11 or 3.12. Docker is an optional packaging path; the Docker build and restart smoke run only on Ubuntu in CI and are not a claim that Docker is natively supported on every host OS.
+
+#### Windows PowerShell
+
+```powershell
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt -r requirements-dev.txt
+Copy-Item .env.example .env
+```
+
+#### macOS / Linux
+
 ```bash
 python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
+python -m pip install --upgrade pip
 pip install -r requirements.txt -r requirements-dev.txt
 cp .env.example .env
 ```
@@ -92,6 +107,14 @@ Outside development/test, a strong unique `LLM_ROUTER_ADMIN_TOKEN` is **mandator
 ```bash
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
+
+For a dependency-light local check before starting the server, run:
+
+```bash
+python scripts/local_smoke.py
+```
+
+The same command works in Windows PowerShell after activating `.venv`. It checks that configuration can be loaded with development-safe defaults and that client-facing error text redacts token-like material; it never calls an upstream provider.
 
 ### Example request
 
@@ -210,11 +233,13 @@ python scripts/restart_migration_smoke.py --build
 
 Boots the built image against a clean temporary Docker volume and checks (1) a database created with the v0.2.0 schema migrates additively with rows intact, and (2) a panel-created API key and usage history survive `docker restart`. Requires a working Docker daemon. CI runs this smoke as part of the docker job. It is a packaged-defaults smoke test, not a production validation claim.
 
+Docker/Compose is optional for local development. The documented native path above is the portable path for Windows, macOS, and Linux; Docker-specific commands assume a working Docker daemon and are intentionally validated only by the Ubuntu CI job.
+
 ### Reproducibility
 
 Direct dependencies are exact-pinned in `requirements.txt` (see the header comment for the refresh procedure); the Docker base image is digest-pinned in `Dockerfile`, so image contents vary only with those pins. Transitive dependencies are not hash-locked.
 
-CI workflow: [`.github/workflows/ci.yml`](./.github/workflows/ci.yml) (Python 3.11/3.12; ruff and mypy as hard gates; pytest coverage gate; integration lane verified double-gated; Docker build + `/health` smoke + restart/migration smoke).
+CI workflow: [`.github/workflows/ci.yml`](./.github/workflows/ci.yml) (Python 3.11/3.12 on Ubuntu, Windows, and macOS; ruff and mypy as hard gates; pytest coverage gate; integration lane verified double-gated; Docker build + `/health` smoke + restart/migration smoke remains an Ubuntu-only job).
 
 ## Project layout
 
